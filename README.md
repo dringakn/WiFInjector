@@ -35,7 +35,7 @@ Before you can use WiFInjector, ensure that you have the following prerequisites
 Clone the repository to your local machine:
 
 ```
-git clone https://github.com/yourusername/wifinjector.git
+git clone https://github.com/dringakn/WiFInjector.git
 ```
 
 Navigate to the project directory:
@@ -101,6 +101,7 @@ For the ease of use
 ```
 sudo ./test.sh wlxXXXXXXXXXXXX 1 20
 ```
+
 Thie script shall configure the specified interface (wlxXXXXXXXXXXXX, where XXX denotes the MAC address of the wifi interface) in to monitor mode at channel 1 and the sets the tx power to be 20 dBm.
 
 For manual launch use:
