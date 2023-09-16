@@ -469,7 +469,7 @@ int injectPacket(pcap_t *pcap, union RadiotapHeader *rt,
   if (sentBytes != len) {
     totalTXFPacket++;
     totalTXFBytes += sentBytes;
-    perror("Trouble injecting packet");
+    // perror("Trouble injecting packet");
     return -1; // Injection failed
   } else {
     // Update statistics on successful injection
