@@ -8,19 +8,20 @@
 #include <termios.h> // Header for terminal I/O handling, used for keyboard input handling
 #include <unistd.h> // Header for POSIX system calls, like close() and usleep()
 
-// Constants and macros for various parameters and offsets in the program
-#define MAX_BUFF_SIZE 4096 // Maximum buffer size for packet data
-#define MAX_MTU_SIZE 1500  // Maximum MTU (Maximum Transmit Unit) size
-#define MAX_TX_POWER 40    // Maximum allowed transmit power in dBm
-#define MAX_DELAY 1000     // Maximum delay in milliseconds
-#define MAX_CHANNEL 165    // Maximum supported channel number
-
-#define OFFSET_FLAGS 16    // Offset for flags in packet data
-#define OFFSET_RATE 17     // Offset for data rate in packet data
-#define MCS_OFFSET 25      // Offset for MCS rate in packet data
-#define MCS_RATE_OFFSET 27 // Offset for MCS rate index in packet data
-
-#define RADIOTAPFRAME_SIZE 32 // Size of the Radiotap header frame
+#define MAX_BUFF_SIZE 4096     // Maximum buffer size for packet data
+#define MAX_MTU_SIZE 1500      // Maximum MTU (Maximum Transmit Unit) size
+#define MAX_TX_POWER 40        // Maximum allowed transmit power in dBm
+#define MAX_DELAY 1000         // Maximum delay in milliseconds
+#define MAX_CHANNEL 165        // Maximum supported channel number
+#define MAX_MAC_BUFF_SIZE 6    // MAC Address array size
+#define HOSTNAME_BUFF_SIZE 256 // Hostname buffer
+#define OFFSET_FLAGS 16        // Offset for flags in packet data
+#define OFFSET_RATE 17         // Offset for data rate in packet data
+#define MCS_OFFSET 25          // Offset for MCS rate in packet data
+#define MCS_RATE_OFFSET 27     // Offset for MCS rate index in packet data
+#define MAX_RATES 12           // Rate array size
+#define RADIOTAPFRAME_SIZE 32  // Size of the Radiotap header frame
+#define IEEE80211FRAME_SIZE 24 // Size of the IEEE 802.11 frame
 
 // Definition of a union representing Radiotap header
 union RadiotapHeader {
@@ -97,8 +98,6 @@ union RadiotapHeader {
   unsigned char data[RADIOTAPFRAME_SIZE];
 };
 
-#define IEEE80211FRAME_SIZE 24 // Size of the IEEE 802.11 frame
-
 // Definition of a union representing IEEE 802.11 frame
 union IEEE80211Frame {
   struct {
@@ -117,12 +116,12 @@ union IEEE80211Frame {
         unsigned short order : 1;           // Order (bit 15)
       } fields;
       unsigned short data;
-    } frameControl;                 // Frame control
-    unsigned short duration;        // Duration
-    unsigned char destAddress[6];   // Destination MAC address
-    unsigned char sourceAddress[6]; // Source MAC address
-    unsigned char bssid[6];         // BSSID (Basic Service Set Identifier)
-    unsigned short sequenceControl; // Sequence control
+    } frameControl;                                 // Frame control
+    unsigned short duration;                        // Duration
+    unsigned char destAddress[MAX_MAC_BUFF_SIZE];   // Destination MAC address
+    unsigned char sourceAddress[MAX_MAC_BUFF_SIZE]; // Source MAC address
+    unsigned char bssid[MAX_MAC_BUFF_SIZE]; // Basic Service Set Identifier
+    unsigned short sequenceControl;         // Sequence control
   } fields;
   unsigned char data[IEEE80211FRAME_SIZE];
 };
@@ -172,13 +171,14 @@ unsigned int selectedMTUSize = MAX_MTU_SIZE;
 unsigned char chars, keyboardBuff[3];
 
 // Buffer to store the host name
-char hostNameBuff[256] = {0x00};
+char hostNameBuff[HOSTNAME_BUFF_SIZE] = {0x00};
 
 // MAC address of the host device
-unsigned char deviceMACAddress[6] = {0xFF}; // Host MAC address
-unsigned char destMACAddress[6] = {0xFF};   // Destination MAC address
+unsigned char deviceMACAddress[MAX_MAC_BUFF_SIZE] = {0xFF}; // Host MAC
+unsigned char destMACAddress[MAX_MAC_BUFF_SIZE] = {0xFF};   // Destination MAC
+char rxBuffer[MAX_BUFF_SIZE] = {' '};
+char txBuffer[MAX_BUFF_SIZE] = {' '};
 
-#define MAX_RATES 12
 const int rates[MAX_RATES] = {1, 2, 5, 6, 9, 11, 12, 18, 24, 36, 48, 54};
 
 /**
@@ -447,40 +447,24 @@ void dumpPacketData(const char *ptr, int nLength) {
  */
 int injectPacket(pcap_t *pcap, union RadiotapHeader *rt,
                  union IEEE80211Frame *frame) {
-  unsigned char packet[MAX_BUFF_SIZE];
   int len = 0;
 
   // Copy Radiotap header data to the packet
   // rt->fields.flags.fields.fcs = 1;
-  memcpy(packet + len, rt->data, RADIOTAPFRAME_SIZE);
+  memcpy(txBuffer + len, rt->data, RADIOTAPFRAME_SIZE);
   len += RADIOTAPFRAME_SIZE;
 
   // Copy IEEE 802.11 frame data to the packet
-  memcpy(packet + len, frame->data, IEEE80211FRAME_SIZE);
+  memcpy(txBuffer + len, frame->data, IEEE80211FRAME_SIZE);
   len += IEEE80211FRAME_SIZE;
 
-  char txBuffer[MAX_BUFF_SIZE];
-  int len1 = sprintf(txBuffer, "TXPacketCtr:%06u Rate:%06u Host:%s ",
-                     totalTXPacket, rt->fields.dataRate, hostNameBuff);
-
-  // Limit the length of additional information to fit within the packet
-  len1 = 1400; // TODO: Modify this value based on your requirements
-
-  if (len1 < 0)
-    len1 = 0;
-  else if ((len + len1) > MAX_MTU_SIZE)
-    len1 = MAX_MTU_SIZE - len - 4;
-
   // Copy additional information to the packet
-  memcpy(packet + len, txBuffer, len1);
+  int len1 = sprintf(txBuffer + len, "TXPacket#%06u Host:%s ", totalTXPacket,
+                     hostNameBuff);
   len += len1;
 
-  // Adjust packet if necessary (e.g., mark with FCS)
-  // if (flagMarkWithFCS)
-  //   packet[OFFSET_FLAGS] |= 0x10; // Set IEEE80211_RADIOTAP_F_FCS bit
-
   // Inject the packet into the network interface using pcap
-  int sentBytes = pcap_inject(pcap, packet, len);
+  int sentBytes = pcap_inject(pcap, txBuffer, len);
 
   if (sentBytes != len) {
     totalTXFPacket++;
@@ -572,7 +556,7 @@ int getMACAddress(const char *ifaceName) {
   // interface
   if (sendIOCTLCommand(SIOCGIFHWADDR, &wrq) == 0) {
     // Copy the MAC address into the deviceMACAddress array
-    memcpy(deviceMACAddress, wrq.u.addr.sa_data, 6);
+    memcpy(deviceMACAddress, wrq.u.addr.sa_data, MAX_MAC_BUFF_SIZE);
 
     // Print the retrieved MAC address in hexadecimal format
     printf("MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n", deviceMACAddress[0],
@@ -877,9 +861,9 @@ int main(int argc, char *argv[]) {
   union IEEE80211Frame frame;
   frame.fields.frameControl.data = 0x0800;
   frame.fields.duration = 0x013A;
-  memcpy(frame.fields.destAddress, destMACAddress, 6);
-  memcpy(frame.fields.sourceAddress, deviceMACAddress, 6);
-  memcpy(frame.fields.bssid, deviceMACAddress, 6);
+  memcpy(frame.fields.destAddress, destMACAddress, MAX_MAC_BUFF_SIZE);
+  memcpy(frame.fields.sourceAddress, deviceMACAddress, MAX_MAC_BUFF_SIZE);
+  memcpy(frame.fields.bssid, deviceMACAddress, MAX_MAC_BUFF_SIZE);
   frame.fields.sequenceControl = 0xB4CA;
   printIEEE80211Frame(&frame);
 
@@ -912,7 +896,7 @@ int main(int argc, char *argv[]) {
     mask = 0;
   }
 
-  pcap = pcap_open_live(argv[optind], 65535, 1, 1, errbuf);
+  pcap = pcap_open_live(argv[optind], MAX_BUFF_SIZE, 1, 1, errbuf);
   if (pcap == NULL) {
     printf("Unable to open interface %s in pcap: %s\n", argv[optind], errbuf);
     return 1;
@@ -949,8 +933,6 @@ int main(int argc, char *argv[]) {
   }
 
   // Main packet capture and manipulation loop
-  char rxBuffer[MAX_BUFF_SIZE];
-  memset(rxBuffer, 0, MAX_BUFF_SIZE);
   struct pcap_pkthdr *pktMetadata = NULL;
   char *packet = rxBuffer;
   union RadiotapHeader *rt1;
