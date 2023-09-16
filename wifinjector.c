@@ -83,8 +83,13 @@ unsigned int totalTXBytes = 0;   // Total transmitted bytes per second
 unsigned int totalRXPackets = 0; // Total received packets per second
 unsigned int totalRXBytes = 0;   // Total received bytes per second
 
+unsigned int totalTXFPacket = 0;  // Total failed transmitted packets per second
+unsigned int totalTXFBytes = 0;   // Total failed transmitted bytes per second
+unsigned int totalRXFPackets = 0; // Total failed received packets per second
+unsigned int totalRXFBytes = 0;   // Total failed received bytes per second
+
 // Delay between packet transmissions in milliseconds
-unsigned int delay = 20;
+unsigned int delay = 1;
 
 // Selected transmit power in dBm
 unsigned int selectedTxPower = MAX_TX_POWER;
@@ -93,7 +98,7 @@ unsigned int selectedTxPower = MAX_TX_POWER;
 unsigned int selectedChannel = 1;
 
 // Selected rate index in the array
-unsigned int selectedRateIndex = 0;
+unsigned int selectedRateIndex = 3;
 
 // Maximum transmit unit (MTU) size
 unsigned int selectedMTUSize = MAX_MTU_SIZE;
@@ -205,13 +210,16 @@ void sigalrm_handler(int sig) {
     // Calculate success rate (percentage of received packets)
     int successRate = (totalTXBytes) ? totalRXPackets * 100 / totalTXPacket : 0;
     // Print statistics including received and transmitted data
-    printf("[%s] RxPacketRate:%03u RXBPS:%05u TxPacketRate:%03u TXBPS:%05u "
-           "TX[%01d]NB[%01d]D[%02u]PWR[%02u]CH[%03u]MTU[%04u]RATE[%02d]SUCCESS["
-           "%03d]\n",
-           hostNameBuff, totalRXPackets, totalRXBytes, totalTXPacket,
-           totalTXBytes, flagEnableTransmit, flagNonBlocking, delay,
-           selectedTxPower, selectedChannel, selectedMTUSize,
-           rates[selectedRateIndex], successRate);
+    printf(
+        "[%s] RxPacketRate:%03u[%03u] RXBPS:%05u[%05u] TxPacketRate:%03u[%03u] "
+        "TXBPS:%05u[%05u] "
+        "TX[%01d]NB[%01d]D[%02u]PWR[%02u]CH[%03u]MTU[%04u]RATE[%02d]SUCCESS["
+        "%03d]\n",
+        hostNameBuff, totalRXPackets, totalRXFPackets, totalRXBytes,
+        totalRXFBytes, totalTXPacket, totalTXFPacket, totalTXBytes,
+        totalTXFBytes, flagEnableTransmit, flagNonBlocking, delay,
+        selectedTxPower, selectedChannel, selectedMTUSize,
+        rates[selectedRateIndex], successRate);
   }
 
   // Reset counters for transmitted and received data
@@ -219,6 +227,10 @@ void sigalrm_handler(int sig) {
   totalTXPacket = 0;
   totalRXBytes = 0;
   totalRXPackets = 0;
+  totalTXFPacket = 0;
+  totalTXFBytes = 0;
+  totalRXFPackets = 0;
+  totalRXFBytes = 0;
 
   // Flush the standard output
   fflush(stdout);
@@ -405,6 +417,8 @@ int injectPacket(pcap_t *pcap, union RadiotapHeader *rt,
   int sentBytes = pcap_inject(pcap, packet, len);
 
   if (sentBytes != len) {
+    totalTXFPacket++;
+    totalTXFBytes += sentBytes;
     perror("Trouble injecting packet");
     return -1; // Injection failed
   } else {
@@ -817,6 +831,21 @@ int main(int argc, char *argv[]) {
   char errbuf[PCAP_ERRBUF_SIZE];
   strcpy(errbuf, "");
   pcap_t *pcap = NULL;
+
+  /* filter expression example: ether host 00:E0:2D:5B:40:7D */
+  char filter_exp[] = "";
+  struct bpf_program fp; /* compiled filter program (expression) */
+  bpf_u_int32 mask;      /* subnet mask */
+  bpf_u_int32 net;       /* ip */
+
+  /* get network number and mask associated with capture device */
+  if (pcap_lookupnet(argv[optind], &net, &mask, errbuf) == -1) {
+    fprintf(stderr, "Couldn't get netmask for device %s: %s\n", argv[optind],
+            errbuf);
+    net = 0;
+    mask = 0;
+  }
+
   pcap = pcap_open_live(argv[optind], 65535, 1, 1, errbuf);
   if (pcap == NULL) {
     printf("Unable to open interface %s in pcap: %s\n", argv[optind], errbuf);
@@ -839,11 +868,34 @@ int main(int argc, char *argv[]) {
     return 3;
   }
 
+  /* compile the filter expression */
+  if (pcap_compile(pcap, &fp, filter_exp, 0, net) == -1) {
+    fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp,
+            pcap_geterr(pcap));
+    exit(EXIT_FAILURE);
+  }
+
+  /* apply the compiled filter */
+  if (pcap_setfilter(pcap, &fp) == -1) {
+    fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp,
+            pcap_geterr(pcap));
+    exit(EXIT_FAILURE);
+  }
+
   // Main packet capture and manipulation loop
-  char stopProgram = 0;
-  int rxbytes;
   char rxBuffer[MAX_BUFF_SIZE];
   memset(rxBuffer, 0, MAX_BUFF_SIZE);
+  struct pcap_pkthdr *pktMetadata = NULL;
+  char *packet = rxBuffer;
+  // union RadiotapHeader rt1;
+  // union IEEE80211Frame frame1;
+  union RadiotapHeader *rt1 = (union RadiotapHeader *)(packet);
+  union IEEE80211Frame *frame1 =
+      (union IEEE80211Frame *)(packet + RADIOTAPFRAME_SIZE);
+
+  char stopProgram = 0;
+  int rxbytes;
+
   do {
     chars = getKeyboard(keyboardBuff);
     if (chars == 1) /* Standard character */ {
@@ -955,55 +1007,60 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    char *packet = rxBuffer;
-    struct pcap_pkthdr *pktMetadata = NULL;
-
     int readPacketStatus =
         pcap_next_ex(pcap, &pktMetadata, (const unsigned char **)&packet);
-    switch (readPacketStatus) {
-    case 0:
-      // packets are being read from a live capture and the packet buffer
-      // time-out expired, useful in non-blocking mode!!!
-      break;
+    int capturedBytes = pktMetadata->caplen;
 
-    case 1:
-      // the packet was read without problems
-      if (pktMetadata->caplen >= PACKET_SIZE) {
-        rxbytes = pktMetadata->caplen - PACKET_SIZE;
-        if (flagShowRadioTap) {
-          union RadiotapHeader rt1;
-          memcpy(rt1.data, packet, RADIOTAPFRAME_SIZE);
-          printRadiotapHeader(&rt1);
-        }
-        if (flagShowIEEE80211) {
-          union IEEE80211Frame frame1;
-          memcpy(frame1.data, packet + RADIOTAPFRAME_SIZE, IEEE80211FRAME_SIZE);
-          printIEEE80211Frame(&frame1);
-        }
-        if (flagShowPacket) {
-          dumpPacketData(&packet[PACKET_SIZE], rxbytes);
-        }
+    if (capturedBytes) {
+      switch (readPacketStatus) {
+      case 0:
+        // packets are being read from a live capture and the packet buffer
+        // time-out expired, useful in non-blocking mode!!!
+        totalRXFPackets++;
+        totalRXFBytes += capturedBytes;
+
+        if (pktMetadata->len != pktMetadata->caplen)
+          dumpPacketData(packet, capturedBytes);
+
+        break;
+
+      case 1:
+        // the packet was read without problems
         totalRXPackets++;
-        totalRXBytes += rxbytes;
-      }
-      // dumpPacketData(packet, pktMetadata->caplen);
-      break;
+        totalRXBytes += capturedBytes;
 
-    default:
-      // Packet reading error
-      if (readPacketStatus < 0) {
-        stopProgram = 1;
+        if (capturedBytes >= PACKET_SIZE) {
+          if (flagShowRadioTap) {
+            printRadiotapHeader(rt1);
+          }
+          if (flagShowIEEE80211) {
+            printIEEE80211Frame(frame1);
+          }
+
+          rxbytes = capturedBytes - PACKET_SIZE;
+          if (flagShowPacket) {
+            dumpPacketData(packet + PACKET_SIZE, rxbytes);
+          }
+        }
+        
+        break;
+
+      default:
+        // Packet reading error
+        if (readPacketStatus < 0) {
+        }
       }
     }
 
     // Inject a packet if enabled
     if (flagEnableTransmit) {
       if (injectPacket(pcap, &rt, &frame) < 0) {
-        stopProgram = 1;
       }
     }
 
+    pktMetadata->len = pktMetadata->caplen = 0;
     usleep(delay * 1000); // Sleep for a specified delay
+
   } while (!stopProgram);
 
   // Cleanup and close pcap
