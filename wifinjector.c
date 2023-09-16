@@ -26,16 +26,66 @@
 union RadiotapHeader {
   struct {
     // Radiotap header fields
-    unsigned char revision;       // Revision of the Radiotap header
-    unsigned char padding;        // Padding or alignment
-    unsigned short length;        // Overall Radiotap header length
-    unsigned int pFlags1;         // First present word
-    unsigned int pFlags2;         // Second present word
-    unsigned int pFlags3;         // Third present word
-    unsigned char flags;          // Flags
-    unsigned char dataRate;       // Data rate
-    unsigned short chFrequency;   // Channel frequency
-    unsigned short chFlags;       // Channel flags
+    unsigned char revision; // Revision of the Radiotap header
+    unsigned char padding;  // Padding or alignment
+    unsigned short length;  // Overall Radiotap header length
+    union {
+      struct {
+        unsigned int tsft : 1;              // Timestamp is present
+        unsigned int flags : 1;             // Flags field is present
+        unsigned int rate : 1;              // Data Rate is present
+        unsigned int channel : 1;           // Channel information is present
+        unsigned int fhss : 1;              // FHSS is present
+        unsigned int dbm_signal : 1;        // dBm signal strength is present
+        unsigned int dbm_noise : 1;         // dBm noise level is present
+        unsigned int lock_quality : 1;      // Lock quality is present
+        unsigned int tx_attenuation : 1;    // Transmit attenuation is present
+        unsigned int db_tx_attenuation : 1; // dB transmit attenuation is pres
+        unsigned int dbm_tx_power : 1;      // dBm transmit power is present
+        unsigned int antenna : 1;           // Antenna information is present
+        unsigned int db_antsignal : 1; // dB antenna signal strength is present
+        unsigned int db_antnoise : 1;  // dB antenna noise level is present
+        unsigned int rx_flags : 1;     // Receive flags are present
+        // unsigned int reserved : 16;    // Reserved bits
+      } fields;
+      unsigned int data;
+    } pFlags1; // First present word
+
+    unsigned int pFlags2; // Second present word
+    unsigned int pFlags3; // Third present word
+    union {
+      struct {
+        unsigned char cfp : 1;        // CFP: Contention-Free Period
+        unsigned char preamble : 1;   // Short Preamble
+        unsigned char wep : 1;        // WEP Encrypted
+        unsigned char fragmented : 1; // Fragmentation
+        unsigned char fcs : 1;        // FCS at end
+        unsigned char data_pad : 1;   // Data padding
+        unsigned char bad_fcs : 1;    // Bad FCS
+        unsigned char short_gi : 1;   // Short Guard Interval
+      } fields;
+      unsigned char data;
+    } flags;                    // Flags
+    unsigned char dataRate;     // Data rate
+    unsigned short chFrequency; // Channel frequency
+    union {
+      struct {
+        unsigned short padding : 4;  // padding
+        unsigned short turbo : 1;    // Turbo channel
+        unsigned short CCK : 1;      // CCK channel
+        unsigned short OFDM : 1;     // OFDM channel
+        unsigned short band2GHz : 1; // 2 GHz spectrum channel
+        unsigned short band5GHz : 1; // 5 GHz spectrum channel
+        unsigned short passive : 1; // Passive channel (don't use for FCS check)
+        unsigned short dynamicCCKOFDM : 1; // Dynamic channel (CCK-OFDM)
+        unsigned short GFSK : 1;           // Gaussian Frequency Shift Keying
+        unsigned short GSM : 1;            // Half rate channel
+        unsigned short staticTurbo : 1;    // Half rate channel
+        unsigned short chWidth10MHz : 1;   // Half rate channel
+        unsigned short chWidth5MHz : 1;    // Quarter rate channel
+      } fields;
+      unsigned short data;
+    } chFlags;                    // Channel flags
     char RSSI;                    // Received Signal Strength Indicator (RSSI)
     unsigned short signalQuality; // Signal quality
     unsigned short rxFlags;       // Receiver flags
@@ -52,7 +102,22 @@ union RadiotapHeader {
 // Definition of a union representing IEEE 802.11 frame
 union IEEE80211Frame {
   struct {
-    unsigned short frameControl;    // Frame control
+    union {
+      struct {
+        unsigned short protocolVersion : 2; // Protocol Version (bits 0-1)
+        unsigned short type : 2;            // Type (bits 2-3)
+        unsigned short subtype : 4;         // Subtype (bits 4-7)
+        unsigned short toDS : 1;            // To DS (bit 8)
+        unsigned short fromDS : 1;          // From DS (bit 9)
+        unsigned short moreFragments : 1;   // More Fragments (bit 10)
+        unsigned short retry : 1;           // Retry (bit 11)
+        unsigned short pwrMgmt : 1;         // Power Management (bit 12)
+        unsigned short moreData : 1;        // More Data (bit 13)
+        unsigned short wep : 1;             // WEP (bit 14)
+        unsigned short order : 1;           // Order (bit 15)
+      } fields;
+      unsigned short data;
+    } frameControl;                 // Frame control
     unsigned short duration;        // Duration
     unsigned char destAddress[6];   // Destination MAC address
     unsigned char sourceAddress[6]; // Source MAC address
@@ -291,17 +356,17 @@ void printRadiotapHeader(const union RadiotapHeader *header) {
          "FREQ:%04u CHFLG:%04X RSSI:%04d Q:%03d RXFLG:%04X RSSI1:%03d "
          "ANT1:%01d RSSI2:%04d ANT2:%01d\n",
          // Display Radiotap header fields in the specified order
-         header->fields.revision,    // Version
-         header->fields.padding,     // Padding
-         header->fields.length,      // Length
-         header->fields.length,      // Length (repeated for clarity)
-         header->fields.pFlags1,     // Flags part 1
-         header->fields.pFlags2,     // Flags part 2
-         header->fields.pFlags3,     // Flags part 3
-         header->fields.flags,       // General flags
-         header->fields.dataRate,    // Data rate
-         header->fields.chFrequency, // Channel frequency
-         header->fields.chFlags,     // Channel flags
+         header->fields.revision,     // Version
+         header->fields.padding,      // Padding
+         header->fields.length,       // Length
+         header->fields.length,       // Length (repeated for clarity)
+         header->fields.pFlags1.data, // Flags part 1
+         header->fields.pFlags2,      // Flags part 2
+         header->fields.pFlags3,      // Flags part 3
+         header->fields.flags.data,   // General flags
+         header->fields.dataRate,     // Data rate
+         header->fields.chFrequency,  // Channel frequency
+         header->fields.chFlags.data, // Channel flags
          header->fields.RSSI, // Received Signal Strength Indicator (RSSI)
          header->fields.signalQuality, // Signal quality
          header->fields.rxFlags,       // Receive flags
@@ -324,7 +389,7 @@ void printIEEE80211Frame(const union IEEE80211Frame *frame) {
   printf("FC:0x%04X DUR:0x%04X DEST:"
          "%02X:%02X:%02X:%02X:%02X:%02X SRC:%02X:%02X:%02X:%02X:%02X:%02X "
          "BSSID:%02X:%02X:%02X:%02X:%02X:%02X SEQCTRL:0x%04X\n",
-         frame->fields.frameControl, frame->fields.duration,
+         frame->fields.frameControl.data, frame->fields.duration,
          frame->fields.destAddress[0], frame->fields.destAddress[1],
          frame->fields.destAddress[2], frame->fields.destAddress[3],
          frame->fields.destAddress[4], frame->fields.destAddress[5],
@@ -386,6 +451,7 @@ int injectPacket(pcap_t *pcap, union RadiotapHeader *rt,
   int len = 0;
 
   // Copy Radiotap header data to the packet
+  // rt->fields.flags.fields.fcs = 1;
   memcpy(packet + len, rt->data, RADIOTAPFRAME_SIZE);
   len += RADIOTAPFRAME_SIZE;
 
@@ -410,8 +476,8 @@ int injectPacket(pcap_t *pcap, union RadiotapHeader *rt,
   len += len1;
 
   // Adjust packet if necessary (e.g., mark with FCS)
-  if (flagMarkWithFCS)
-    packet[OFFSET_FLAGS] |= 0x10; // Set IEEE80211_RADIOTAP_F_FCS bit
+  // if (flagMarkWithFCS)
+  //   packet[OFFSET_FLAGS] |= 0x10; // Set IEEE80211_RADIOTAP_F_FCS bit
 
   // Inject the packet into the network interface using pcap
   int sentBytes = pcap_inject(pcap, packet, len);
@@ -793,13 +859,13 @@ int main(int argc, char *argv[]) {
   rt.fields.revision = 0;
   rt.fields.padding = 0;
   rt.fields.length = RADIOTAPFRAME_SIZE;
-  rt.fields.pFlags1 = 0xA00040AE;
+  rt.fields.pFlags1.data = 0xA00040AE;
   rt.fields.pFlags2 = 0xA0000820;
   rt.fields.pFlags3 = 0x00000820;
-  rt.fields.flags = 0x10;
+  rt.fields.flags.data = 0x10;
   rt.fields.dataRate = rates[selectedRateIndex];
   rt.fields.chFrequency = wifiChannelToFrequency(selectedChannel);
-  rt.fields.chFlags = 0x00A0;
+  rt.fields.chFlags.data = 0x00A0;
   rt.fields.RSSI = rt.fields.RSSI1 = rt.fields.RSSI2 = -16;
   rt.fields.signalQuality = 100;
   rt.fields.rxFlags = 0x0000;
@@ -809,7 +875,7 @@ int main(int argc, char *argv[]) {
 
   // Initialize IEEE 802.11 frame structure
   union IEEE80211Frame frame;
-  frame.fields.frameControl = 0x0800;
+  frame.fields.frameControl.data = 0x0800;
   frame.fields.duration = 0x013A;
   memcpy(frame.fields.destAddress, destMACAddress, 6);
   memcpy(frame.fields.sourceAddress, deviceMACAddress, 6);
