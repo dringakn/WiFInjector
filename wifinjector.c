@@ -288,8 +288,8 @@ void usage(void) {
  */
 void printRadiotapHeader(const union RadiotapHeader *header) {
   printf("V:%02X P:%02X L:%04X[%04u] P1:%08X P2:%08X P3:%08X FLGS:%02X DR:%03u "
-         "FREQ:%04u CHFLG:%04X RSSI:%03d Q:%03d RXFLG:%04X RSSI1:%03d "
-         "ANT1:%01d RSSI2:%03d ANT2:%01d\n",
+         "FREQ:%04u CHFLG:%04X RSSI:%04d Q:%03d RXFLG:%04X RSSI1:%03d "
+         "ANT1:%01d RSSI2:%04d ANT2:%01d\n",
          // Display Radiotap header fields in the specified order
          header->fields.revision,    // Version
          header->fields.padding,     // Padding
