@@ -887,11 +887,8 @@ int main(int argc, char *argv[]) {
   memset(rxBuffer, 0, MAX_BUFF_SIZE);
   struct pcap_pkthdr *pktMetadata = NULL;
   char *packet = rxBuffer;
-  // union RadiotapHeader rt1;
-  // union IEEE80211Frame frame1;
-  union RadiotapHeader *rt1 = (union RadiotapHeader *)(packet);
-  union IEEE80211Frame *frame1 =
-      (union IEEE80211Frame *)(packet + RADIOTAPFRAME_SIZE);
+  union RadiotapHeader *rt1;
+  union IEEE80211Frame *frame1;
 
   char stopProgram = 0;
   int rxbytes;
@@ -1030,6 +1027,9 @@ int main(int argc, char *argv[]) {
         totalRXBytes += capturedBytes;
 
         if (capturedBytes >= PACKET_SIZE) {
+          rt1 = (union RadiotapHeader *)(packet);
+          frame1 = (union IEEE80211Frame *)(packet + RADIOTAPFRAME_SIZE);
+
           if (flagShowRadioTap) {
             printRadiotapHeader(rt1);
           }
@@ -1042,7 +1042,7 @@ int main(int argc, char *argv[]) {
             dumpPacketData(packet + PACKET_SIZE, rxbytes);
           }
         }
-        
+
         break;
 
       default:
