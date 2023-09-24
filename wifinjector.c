@@ -271,20 +271,42 @@ unsigned char getKeyboard(unsigned char kbBuffer[3]) {
  */
 void sigalrm_handler(int sig) {
 
+  /*
+  Note:
+  \033[ starts the escape sequence.
+  1;    indicates that the following code will be for bold or bright text
+        (you can omit this part if you don't want bold text). 33 specifies the
+        color code for yellow text. You can find ANSI color codes for various
+        colors. m marks the end of the color code.
+
+        To reset the text color back to the default, you can use \033[0m.
+
+  Color	  Foreground Color Code	  Background Color Code
+  Black	  \033[30m	              \033[40m
+  Red	    \033[31m	              \033[41m
+  Green	  \033[32m	              \033[42m
+  Yellow	\033[33m	              \033[43m
+  Blue	  \033[34m	              \033[44m
+  Magenta	\033[35m	              \033[45m
+  Cyan	  \033[36m	              \033[46m
+  White	  \033[37m	              \033[47m
+  Reset	  \033[0m	                \033[0m
+  */
+
   if (flagShowStats) {
     // Calculate success rate (percentage of received packets)
     int successRate = (totalTXBytes) ? totalRXPackets * 100 / totalTXPacket : 0;
     // Print statistics including received and transmitted data
-    printf(
-        "[%s] RxPacketRate:%03u[%03u] RXBPS:%05u[%05u] TxPacketRate:%03u[%03u] "
-        "TXBPS:%05u[%05u] "
-        "TX[%01d]NB[%01d]D[%02u]PWR[%02u]CH[%03u]MTU[%04u]RATE[%02d]SUCCESS["
-        "%03d]\n",
-        hostNameBuff, totalRXPackets, totalRXFPackets, totalRXBytes,
-        totalRXFBytes, totalTXPacket, totalTXFPacket, totalTXBytes,
-        totalTXFBytes, flagEnableTransmit, flagNonBlocking, delay,
-        selectedTxPower, selectedChannel, selectedMTUSize,
-        rates[selectedRateIndex], successRate);
+    printf("\033[1;33m[%s] RxPacketRate:%03u[%03u] RXBPS:%05u[%05u] "
+           "TxPacketRate:%03u[%03u] "
+           "TXBPS:%05u[%05u] "
+           "TX[%01d]NB[%01d]D[%02u]PWR[%02u]CH[%03u]MTU[%04u]RATE[%02d]SUCCESS["
+           "%03d]\033[0m\n",
+           hostNameBuff, totalRXPackets, totalRXFPackets, totalRXBytes,
+           totalRXFBytes, totalTXPacket, totalTXFPacket, totalTXBytes,
+           totalTXFBytes, flagEnableTransmit, flagNonBlocking, delay,
+           selectedTxPower, selectedChannel, selectedMTUSize,
+           rates[selectedRateIndex], successRate);
   }
 
   // Reset counters for transmitted and received data
@@ -352,9 +374,10 @@ void usage(void) {
  * @param header A pointer to a union RadiotapHeader structure.
  */
 void printRadiotapHeader(const union RadiotapHeader *header) {
-  printf("V:%02X P:%02X L:%04X[%04u] P1:%08X P2:%08X P3:%08X FLGS:%02X DR:%03u "
+  printf("\033[1;32mV:%02X P:%02X L:%04X[%04u] P1:%08X P2:%08X P3:%08X "
+         "FLGS:%02X DR:%03u "
          "FREQ:%04u CHFLG:%04X RSSI:%04d Q:%03d RXFLG:%04X RSSI1:%03d "
-         "ANT1:%01d RSSI2:%04d ANT2:%01d\n",
+         "ANT1:%01d RSSI2:%04d ANT2:%01d\033[0m\n",
          // Display Radiotap header fields in the specified order
          header->fields.revision,     // Version
          header->fields.padding,      // Padding
@@ -386,9 +409,9 @@ void printRadiotapHeader(const union RadiotapHeader *header) {
  * @param frame Pointer to the IEEE80211Frame structure to be printed.
  */
 void printIEEE80211Frame(const union IEEE80211Frame *frame) {
-  printf("FC:0x%04X DUR:0x%04X DEST:"
+  printf("\033[1;34mFC:0x%04X DUR:0x%04X DEST:"
          "%02X:%02X:%02X:%02X:%02X:%02X SRC:%02X:%02X:%02X:%02X:%02X:%02X "
-         "BSSID:%02X:%02X:%02X:%02X:%02X:%02X SEQCTRL:0x%04X\n",
+         "BSSID:%02X:%02X:%02X:%02X:%02X:%02X SEQCTRL:0x%04X\033[0m\n",
          frame->fields.frameControl.data, frame->fields.duration,
          frame->fields.destAddress[0], frame->fields.destAddress[1],
          frame->fields.destAddress[2], frame->fields.destAddress[3],
