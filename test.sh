@@ -21,13 +21,21 @@ else
 	txpower=20
 fi
 
+# Check if an data_rate argument is provided, otherwise use "2" as default
+if [ -n "$4" ]; then
+	data_rate="$4"
+else
+	data_rate=11
+fi
+
 # Disable the interface and set it to monitor mode
 ifconfig "${wlan}" down
 iw dev "${wlan}" set monitor otherbss fcsfail # Set the interface to monitor mode with specific options
 ifconfig "${wlan}" up
 iw dev "${wlan}" set channel "${channel}"
+iwconfig "${wlan}" rate "${data_rate}M"
 iwconfig "${wlan}" txpower "${txpower}"
 
 # Display a message indicating that the operation is being performed on the chosen interface
-echo "Running wifinjector on ${wlan} at channel ${channel} txpower ${txpower} dBm"
+echo "Running wifinjector on ${wlan} at channel ${channel} txpower ${txpower} dBm rate ${data_rate}M"
 ./wifinjector "${wlan}"
