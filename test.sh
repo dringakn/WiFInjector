@@ -4,7 +4,7 @@
 if [ -n "$1" ]; then
 	wlan="$1"
 else
-	wlan="wlx00c0cab28652"
+	wlan="wlx488f4cffe3f2"
 fi
 
 # Check if an channel argument is provided, otherwise use "1" as default
