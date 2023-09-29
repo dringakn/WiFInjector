@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import os
 
+driver_name = "8188eu"
 
 # Define the path to the module parameters directory
-module_params_dir = "/sys/module/8188eu/parameters"
+module_params_dir = f"/sys/module/{driver_name}/parameters"
 
 # Define the path to the configuration file you want to create
-config_file_path = "/etc/modprobe.d/8188eu.conf"
+config_file_path = f"/etc/modprobe.d/{driver_name}.conf"
 
 # Create an empty dictionary to store parameter name-value pairs
 param_values = {}
@@ -15,7 +16,7 @@ replacement_dict = {
     b'1': '1',
     b'255': '255',
     b'\xff\xff': 'DE',
-    b'(null)':'0',
+    b'(null)': '0',
     # b'': '0',
 }
 
@@ -52,6 +53,6 @@ for param_file in param_files:
 with open(config_file_path, "wb") as config_file:
     for param_name, param_value in param_values.items():
         # Write each parameter as an "options" line in the config file
-        config_file.write(f"options 8188eu {param_name}={param_value}\n".encode('utf-8'))
+        config_file.write(f"options {driver_name} {param_name}={param_value}\n".encode('utf-8'))
 
 print(f"Configuration file '{config_file_path}' created with module parameters.")
