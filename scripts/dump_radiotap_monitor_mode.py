@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 
 import pyshark
+import subprocess
 
 # Define the interface in monitor mode
-interface = "wlx488f4cffe3f2" #"wlx488f4cffd51b"
+interface = "wlx00e04ce72fdc"  # "wlx488f4cffd51b", "wlx00e04c41219c", "wlx00e04c8d6fb3"
+
+# Set the interface to monitor mode using subprocess
+try:
+    subprocess.run(["ifconfig", interface, "down"])
+    subprocess.run(["iwconfig", interface, "mode", "monitor"])
+    subprocess.run(["ifconfig", interface, "up"])
+except Exception as e:
+    print(f"Error setting {interface} to monitor mode: {e}")
+    exit(-1)
+
 
 # Create a packet capture object
 capture = pyshark.LiveCapture(interface=interface, display_filter="wlan")
