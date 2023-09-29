@@ -848,15 +848,23 @@ int main(int argc, char *argv[]) {
   if (getMACAddress(argv[optind]) != 0) {
     exit(EXIT_FAILURE);
   }
+
+  // Initialize TX Power
   if (setTXPower(argv[optind], selectedTxPower) != 0) {
     printf("Unable to set TxPower.\n");
   }
+
+  // Initialize Monitor mode
   if (setMonitorMode(argv[optind]) != 0) {
     printf("Unable to set Monitor mode.\n");
   }
+
+  // Initialize Channel number
   if (setFrequency(argv[optind], selectedChannel) != 0) {
     printf("Unable to set Frequency.\n");
   }
+
+  // Initialize MTU bytes
   if (setMTU(argv[optind], selectedMTUSize) != 0) {
     printf("Unable to set MTU.\n");
   }
@@ -993,14 +1001,16 @@ int main(int argc, char *argv[]) {
       case 'J':
         if (selectedMTUSize > (2 * PACKET_SIZE + 4)) {
           --selectedMTUSize;
-          setMTU(argv[optind], selectedMTUSize);
+          if (setMTU(argv[optind], selectedMTUSize) != 0)
+            printf("Error setting MTU %u bytes\n", selectedMTUSize);
         }
         break;
       case 'k':
       case 'K':
         if (selectedMTUSize < MAX_MTU_SIZE) {
           ++selectedMTUSize;
-          setMTU(argv[optind], selectedMTUSize);
+          if (setMTU(argv[optind], selectedMTUSize) != 0)
+            printf("Error setting MTU %u bytes\n", selectedMTUSize);
         }
         break;
       case 'n':
@@ -1031,14 +1041,15 @@ int main(int argc, char *argv[]) {
         case 65: /* UP */
           if (selectedTxPower < MAX_TX_POWER) {
             ++selectedTxPower;
-            setTXPower(argv[optind], selectedTxPower);
+            if (setTXPower(argv[optind], selectedTxPower) != 0)
+              printf("Error setting power %u dBm\n", selectedTxPower);
           }
           break;
         case 66: /* DOWN */
           if (selectedTxPower > 0) {
             --selectedTxPower;
-            // setTXPower(argv[optind], selectedTxPower);
-            setTXPower(argv[optind], selectedTxPower);
+            if (setTXPower(argv[optind], selectedTxPower) != 0)
+              printf("Error setting power %u dBm\n", selectedTxPower);
           }
           break;
         case 67: /* RIGHT */
@@ -1046,7 +1057,9 @@ int main(int argc, char *argv[]) {
             selectedChannel = 36;
           if (selectedChannel < MAX_CHANNEL) {
             ++selectedChannel;
-            setFrequency(argv[optind], selectedChannel);
+            if (setFrequency(argv[optind], selectedChannel) != 0)
+              printf("Error setting channel %u [%d Mhz]\n", selectedChannel,
+                     wifiChannelToFrequency(selectedChannel));
           }
           break;
         case 68: /* LEFT */
@@ -1054,18 +1067,20 @@ int main(int argc, char *argv[]) {
             selectedChannel = 13;
           else if (selectedChannel > 1) {
             --selectedChannel;
-            setFrequency(argv[optind], selectedChannel);
+            if (setFrequency(argv[optind], selectedChannel) != 0)
+              printf("Error setting channel %u [%d Mhz]\n", selectedChannel,
+                     wifiChannelToFrequency(selectedChannel));
           }
           break;
         case 53: /* PAGE-UP */
           if (delay < MAX_DELAY)
             delay++;
-          printf("Delay[mSec]: %d\n", delay);
+          printf("Delay[mSec]: %u\n", delay);
           break;
         case 54: /* PAGE-DOWN */
           if (delay > 0)
             delay--;
-          printf("Delay[mSec]: %d\n", delay);
+          printf("Delay[mSec]: %u\n", delay);
           break;
         default:
           printf("%d\t%d\t%d\n", (int)keyboardBuff[0], (int)keyboardBuff[1],
