@@ -50,10 +50,8 @@ union RadiotapHeader {
         // unsigned int reserved : 16;    // Reserved bits
       } fields;
       unsigned int data;
-    } pFlags1; // First present word
+    } pFlags[3]; // First present word
 
-    unsigned int pFlags2; // Second present word
-    unsigned int pFlags3; // Third present word
     union {
       struct {
         unsigned char cfp : 1;        // CFP: Contention-Free Period
@@ -379,17 +377,17 @@ void printRadiotapHeader(const union RadiotapHeader *header) {
          "FREQ:%04u CHFLG:%04X RSSI:%04d Q:%03d RXFLG:%04X RSSI1:%03d "
          "ANT1:%01d RSSI2:%04d ANT2:%01d\033[0m\n",
          // Display Radiotap header fields in the specified order
-         header->fields.revision,     // Version
-         header->fields.padding,      // Padding
-         header->fields.length,       // Length
-         header->fields.length,       // Length (repeated for clarity)
-         header->fields.pFlags1.data, // Flags part 1
-         header->fields.pFlags2,      // Flags part 2
-         header->fields.pFlags3,      // Flags part 3
-         header->fields.flags.data,   // General flags
-         header->fields.dataRate,     // Data rate
-         header->fields.chFrequency,  // Channel frequency
-         header->fields.chFlags.data, // Channel flags
+         header->fields.revision,       // Version
+         header->fields.padding,        // Padding
+         header->fields.length,         // Length
+         header->fields.length,         // Length (repeated for clarity)
+         header->fields.pFlags[0].data, // Flags part 1
+         header->fields.pFlags[1].data, // Flags part 2
+         header->fields.pFlags[2].data, // Flags part 3
+         header->fields.flags.data,     // General flags
+         header->fields.dataRate,       // Data rate
+         header->fields.chFrequency,    // Channel frequency
+         header->fields.chFlags.data,   // Channel flags
          header->fields.RSSI, // Received Signal Strength Indicator (RSSI)
          header->fields.signalQuality, // Signal quality
          header->fields.rxFlags,       // Receive flags
@@ -874,9 +872,9 @@ int main(int argc, char *argv[]) {
   rt.fields.revision = 0;
   rt.fields.padding = 0;
   rt.fields.length = RADIOTAPFRAME_SIZE;
-  rt.fields.pFlags1.data = 0xA00040AE;
-  rt.fields.pFlags2 = 0xA0000820;
-  rt.fields.pFlags3 = 0x00000820;
+  rt.fields.pFlags[0].data = 0xA00040AE;
+  rt.fields.pFlags[1].data = 0xA0000820;
+  rt.fields.pFlags[2].data = 0x00000820;
   rt.fields.flags.data = 0x10;
   rt.fields.dataRate = rates[selectedRateIndex];
   rt.fields.chFrequency = wifiChannelToFrequency(selectedChannel);
