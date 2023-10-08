@@ -104,17 +104,17 @@ union IEEE80211Frame {
   struct {
     union {
       struct {
-        unsigned short protocolVersion : 2;  // Protocol Version (bits 0-1)
-        unsigned short type : 2;             // Type (bits 2-3)
-        unsigned short subtype : 4;          // Subtype (bits 4-7)
-        unsigned short toDS : 1;             // To DS (bit 8)
-        unsigned short fromDS : 1;           // From DS (bit 9)
-        unsigned short moreFragments : 1;    // More Fragments (bit 10)
-        unsigned short retry : 1;            // Retry (bit 11)
-        unsigned short pwrMgmt : 1;          // Power Management (bit 12)
-        unsigned short moreData : 1;         // More Data (bit 13)
-        unsigned short wep : 1;              // WEP (bit 14)
-        unsigned short order : 1;            // Order (bit 15)
+        unsigned short version : 2;        // Protocol Version (bits 0-1)
+        unsigned short type : 2;           // Type (bits 2-3)
+        unsigned short subtype : 4;        // Subtype (bits 4-7)
+        unsigned short toDS : 1;           // To DS (bit 8)
+        unsigned short fromDS : 1;         // From DS (bit 9)
+        unsigned short moreFragments : 1;  // More Fragments (bit 10)
+        unsigned short retry : 1;          // Retry (bit 11)
+        unsigned short pwrMgmt : 1;        // Power Management (bit 12)
+        unsigned short moreData : 1;       // More Data (bit 13)
+        unsigned short wep : 1;            // WEP (bit 14)
+        unsigned short order : 1;          // Order (bit 15)
       } fields;
       unsigned short data;
     } frameControl;                                  // Frame control
@@ -155,7 +155,7 @@ unsigned int totalRXFPackets = 0;  // Total failed received packets per second
 unsigned int totalRXFBytes = 0;    // Total failed received bytes per second
 
 // Delay between packet transmissions in milliseconds
-unsigned int delay = 1;
+unsigned int delay = 1000;
 
 // Selected transmit power in dBm
 unsigned int selectedTxPower = MAX_TX_POWER;
@@ -377,22 +377,131 @@ void usage(void) {
  * @param frame Pointer to the IEEE80211Frame structure to be printed.
  */
 void printIEEE80211Frame(const union IEEE80211Frame *frame) {
-  printf("\033[1;34mFC:0x%04X ", frame->fields.frameControl.data);
-  printf("V[%d]", (frame->fields.frameControl.data & 0x0003));  // 0
-  // 0:Mgt, 1:Ctl, 2:Data
-  printf("T[%d]", (frame->fields.frameControl.data & 0x000C) >> 2);
-  // 0:Ass. Req, 1:Ass. Res., 8:Beacon,  etc.
-  printf("ST[%d]", (frame->fields.frameControl.data & 0x00F0) >> 4);
-  printf("TODS[%d]", (frame->fields.frameControl.data & 0x0100) >> 8);
-  printf("FROMDS[%d]", (frame->fields.frameControl.data & 0x0200) >> 9);
-  printf("FRAG[%d]", (frame->fields.frameControl.data & 0x0400) >> 10);
-  printf("RETRY[%d]", (frame->fields.frameControl.data & 0x0800) >> 11);
-  printf("PMGT[%d]", (frame->fields.frameControl.data & 0x1000) >> 12);
-  printf("MDATA[%d]", (frame->fields.frameControl.data & 0x2000) >> 13);
-  printf("WEP[%d]", (frame->fields.frameControl.data & 0x4000) >> 14);
-  printf("ORDER[%d]", (frame->fields.frameControl.data & 0x8000) >> 15);
+  int data;
+  printf("\033[1;34mFC:0x%04X[", frame->fields.frameControl.data);
+  // printf("V[%d]", frame->fields.frameControl.fields.version);
+  switch (frame->fields.frameControl.fields.type) {
+    case 0:  // Management Frame
+      printf(" MAGT");
+      switch (frame->fields.frameControl.fields.subtype) {
+        case 0:  // Association request
+          printf(" ASS.REQ.");
+          break;
+        case 1:  // Association response
+          printf(" ASS.RES.");
+          break;
+        case 2:  // Re-association request
+          printf(" REASS.REQ.");
+          break;
+        case 3:  // Re-association response
+          printf(" REASS.RES.");
+          break;
+        case 4:  // Probe request
+          printf(" RPOBEREQ.");
+          break;
+        case 5:  // Probe response
+          printf(" PROBERES.");
+          break;
+        case 6:  // Timing Advertisement
+          printf(" TIMEADV.");
+          break;
+        case 8:  // Beacon
+          printf(" BEACON");
+          break;
+        case 9:  // Announcement Traffic Indication Message
+          printf(" ATIM");
+          break;
+        case 10:  // Disassociation
+          printf(" DISS");
+          break;
+        case 11:  // Authentication
+          printf(" AUTH");
+          break;
+        case 12:  // De-authentication
+          printf(" DEAUTH");
+          break;
+        case 14:  // Action
+          printf(" ACTION");
+          break;
+        default:
+          break;
+      }
+      break;
+    case 1:  // Control Frame
+      printf(" CTRL");
+      // TODO
+      switch (frame->fields.frameControl.fields.subtype) {
+        case 0x04:  // Initiates a handshake before transmitting data
+          printf(" RTS");
+          break;
+        case 0x05:  // Acknowledgment to RTS, granting permission to send data
+          printf(" CTS");
+          break;
+        case 0x08:  // ACK the successful receipt of a data or management frame
+          printf(" ACK");
+          break;
+        case 0x09:  // Indicates the end of a contention-free period in PCF
+                    // (Point Coordination Function)
+          printf(" CF-END");
+          break;
+        case 0x0A:  // Acknowledgment for the end of a contention-free period
+          printf(" CF-END+CF-ACK");
+          break;
+        case 0x0B:  // Requests acknowledgment for a block of received frames
+          printf(" ACK.REQ.");
+          break;
+        case 0x0C:  // Acknowledges successful receipt of a block of frames
+          printf(" ACK.RES.");
+          break;
+        case 0x0D:  // Used in power save mode to poll a sleeping station for
+                    // buffered frames
+          printf(" PS-POLL");
+          break;
+        case 0x14:  // Combined exchange for collision avoidance
+          printf(" RTSCTS");
+          break;
+        default:
+          break;
+      }
+      break;
+    case 2:  // Data Frame
+      printf(" DATA");
+      break;
+    case 3:  // Unknow Frame
+      printf(" UNKNOWN");
+      break;
+    default:
+      break;
+  }
+
+  data = (frame->fields.frameControl.fields.fromDS) << 1 |
+         frame->fields.frameControl.fields.toDS;
+  switch (data) {
+    case 0:  // Management: sent/received within the BSS (Basic Service Set)
+      printf(" AP->AP[BSS]");
+      break;
+    case 1:  // Control
+      printf(" AP->CLIENT");
+      break;
+    case 2:  // Control
+      printf(" CLIENT->AP");
+      break;
+    case 3:  // Data: sent/received from a station to a station within the BSS
+      printf(" AP->AP[BRIDGE]");
+      break;
+    default:
+      break;
+  }
+
+  if (frame->fields.frameControl.fields.moreFragments) printf(" MOREFRAG");
+  if (frame->fields.frameControl.fields.retry) printf(" RETRY");
+  if (frame->fields.frameControl.fields.pwrMgmt) printf(" PWRMGT");
+  if (frame->fields.frameControl.fields.moreData) printf(" MOREDATA");
+  if (frame->fields.frameControl.fields.wep) printf(" WEP");
+  if (frame->fields.frameControl.fields.order) printf(" ORDER");
+
   printf(
-      " DUR:0x%04X DEST:"
+      "] DUR:0x%04X DEST:"
       "%02X:%02X:%02X:%02X:%02X:%02X SRC:%02X:%02X:%02X:%02X:%02X:%02X "
       "BSSID:%02X:%02X:%02X:%02X:%02X:%02X SEQCTRL:0x%04X",
       frame->fields.duration, frame->fields.destAddress[0],
@@ -882,7 +991,15 @@ int radioTapParser(struct ieee80211_radiotap_iterator *rtapIterator) {
 
       case IEEE80211_RADIOTAP_TX_FLAGS:  // 15, u16
         data[0] = get_unaligned_le16(&rtapIterator->this_arg[0]);
-        printf("TXFLAGS:%04X ", data[0]);
+        printf("TXFLAGS:%04X[", data[0]);
+        if (data[0] & IEEE80211_RADIOTAP_F_TX_FAIL) printf(" TXFAIL");
+        if (data[0] & IEEE80211_RADIOTAP_F_TX_CTS) printf(" TXCTS");
+        if (data[0] & IEEE80211_RADIOTAP_F_TX_RTS) printf(" TXRTS");
+        if (data[0] & IEEE80211_RADIOTAP_F_TX_NOACK) printf(" TXNOACK");
+        if (data[0] & 0x0010) printf(" TXSQ#");
+        if (data[0] & 0x0020) printf(" TX?");
+        printf(" ] ");
+
         break;
 
       case IEEE80211_RADIOTAP_RTS_RETRIES:  // 16,
@@ -890,7 +1007,7 @@ int radioTapParser(struct ieee80211_radiotap_iterator *rtapIterator) {
         break;
 
       case IEEE80211_RADIOTAP_DATA_RETRIES:  // 17,
-        printf("RETRY: ");
+        printf("RETRY:%02X", rtapIterator->this_arg[0]);
         break;
 
       case IEEE80211_RADIOTAP_MCS:  // 19, u8 , u8 , u8
@@ -992,6 +1109,7 @@ int radioTapParser(struct ieee80211_radiotap_iterator *rtapIterator) {
         break;
 
       default:
+        printf("UNKNOWN: ");
         break;
     }
   }
@@ -1368,7 +1486,7 @@ int main(int argc, char *argv[]) {
     }
 
     pktMetadata->len = pktMetadata->caplen = 0;
-    usleep(delay * 1000);  // Sleep for a specified delay
+    usleep(delay * 850);  // Sleep for a specified delay
 
   } while (!stopProgram);
 
