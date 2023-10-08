@@ -134,9 +134,8 @@ typedef struct iwreq
 const int PACKET_SIZE = RADIOTAPFRAME_SIZE + IEEE80211FRAME_SIZE;
 
 // Various program configuration flags and settings
-int flagMarkWithFCS = 0;  // Flag to mark packets with FCS (CRC) already
-int flagNonBlocking =
-    1;  // Flag to set non-blocking mode (1: non-blocking, 0: blocking)
+int flagMarkWithFCS = 0;     // Flag to mark packets with FCS (CRC) already
+int flagNonBlocking = 1;     // Flag to set mode (1: non-blocking, 0: blocking)
 int flagShowRadioTap = 0;    // Flag to show Radiotap header information
 int flagShowIEEE80211 = 0;   // Flag to show IEEE 802.11 frame information
 int flagShowPacket = 0;      // Flag to show packet data
@@ -815,8 +814,8 @@ int injectPacket(pcap_t *pcap, struct ieee80211_radiotap_iterator *rtapIterator,
 
   // Copy Radiotap header data to the packet
   // rt->fields.flags.fields.fcs = 1;
-  memcpy(txBuffer + len, rtapIterator->_rtheader, rtapIterator->_rtheader->it_len);
-  len += rtapIterator->_rtheader->it_len;
+  memcpy(txBuffer + len, rtapIterator->_rtheader, rtapIterator->_max_length);
+  len += rtapIterator->_max_length;
 
   // Copy IEEE 802.11 frame data to the packet
   memcpy(txBuffer + len, frame->data, IEEE80211FRAME_SIZE);
