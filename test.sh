@@ -25,14 +25,15 @@ fi
 if [ -n "$4" ]; then
 	data_rate="$4"
 else
-	data_rate=11
+	data_rate=54
 fi
 
 # Disable the interface and set it to monitor mode
 ifconfig "${wlan}" down
 iw dev "${wlan}" set monitor otherbss fcsfail # Set the interface to monitor mode with specific options
 ifconfig "${wlan}" up
-iw dev "${wlan}" set channel "${channel}"
+iw dev "${wlan}" set channel "${channel}" HT40+
+# iw dev "${wlan}" set channel "${channel}"
 iwconfig "${wlan}" rate "${data_rate}M"
 iwconfig "${wlan}" txpower "${txpower}"
 
