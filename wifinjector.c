@@ -377,20 +377,35 @@ void usage(void) {
  * @param frame Pointer to the IEEE80211Frame structure to be printed.
  */
 void printIEEE80211Frame(const union IEEE80211Frame *frame) {
+  printf("\033[1;34mFC:0x%04X ", frame->fields.frameControl.data);
+  printf("V[%d]", (frame->fields.frameControl.data & 0x0003));  // 0
+  // 0:Mgt, 1:Ctl, 2:Data
+  printf("T[%d]", (frame->fields.frameControl.data & 0x000C) >> 2);
+  // 0:Ass. Req, 1:Ass. Res., 8:Beacon,  etc.
+  printf("ST[%d]", (frame->fields.frameControl.data & 0x00F0) >> 4);
+  printf("TODS[%d]", (frame->fields.frameControl.data & 0x0100) >> 8);
+  printf("FROMDS[%d]", (frame->fields.frameControl.data & 0x0200) >> 9);
+  printf("FRAG[%d]", (frame->fields.frameControl.data & 0x0400) >> 10);
+  printf("RETRY[%d]", (frame->fields.frameControl.data & 0x0800) >> 11);
+  printf("PMGT[%d]", (frame->fields.frameControl.data & 0x1000) >> 12);
+  printf("MDATA[%d]", (frame->fields.frameControl.data & 0x2000) >> 13);
+  printf("WEP[%d]", (frame->fields.frameControl.data & 0x4000) >> 14);
+  printf("ORDER[%d]", (frame->fields.frameControl.data & 0x8000) >> 15);
   printf(
-      "\033[1;34mFC:0x%04X DUR:0x%04X DEST:"
+      " DUR:0x%04X DEST:"
       "%02X:%02X:%02X:%02X:%02X:%02X SRC:%02X:%02X:%02X:%02X:%02X:%02X "
-      "BSSID:%02X:%02X:%02X:%02X:%02X:%02X SEQCTRL:0x%04X\033[0m\n",
-      frame->fields.frameControl.data, frame->fields.duration,
-      frame->fields.destAddress[0], frame->fields.destAddress[1],
-      frame->fields.destAddress[2], frame->fields.destAddress[3],
-      frame->fields.destAddress[4], frame->fields.destAddress[5],
-      frame->fields.sourceAddress[0], frame->fields.sourceAddress[1],
-      frame->fields.sourceAddress[2], frame->fields.sourceAddress[3],
-      frame->fields.sourceAddress[4], frame->fields.sourceAddress[5],
-      frame->fields.bssid[0], frame->fields.bssid[1], frame->fields.bssid[2],
-      frame->fields.bssid[3], frame->fields.bssid[4], frame->fields.bssid[5],
+      "BSSID:%02X:%02X:%02X:%02X:%02X:%02X SEQCTRL:0x%04X",
+      frame->fields.duration, frame->fields.destAddress[0],
+      frame->fields.destAddress[1], frame->fields.destAddress[2],
+      frame->fields.destAddress[3], frame->fields.destAddress[4],
+      frame->fields.destAddress[5], frame->fields.sourceAddress[0],
+      frame->fields.sourceAddress[1], frame->fields.sourceAddress[2],
+      frame->fields.sourceAddress[3], frame->fields.sourceAddress[4],
+      frame->fields.sourceAddress[5], frame->fields.bssid[0],
+      frame->fields.bssid[1], frame->fields.bssid[2], frame->fields.bssid[3],
+      frame->fields.bssid[4], frame->fields.bssid[5],
       frame->fields.sequenceControl);
+  printf("\033[0m\n");
 }
 
 /**
