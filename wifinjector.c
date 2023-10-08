@@ -1,4 +1,5 @@
-#include <getopt.h> // Header for processing command-line options using getopt
+#include "radiotap.h" // Radiotap parser
+#include <getopt.h>   // Header for processing command-line options using getopt
 #include <linux/wireless.h> // Header for Wireless Extensions, used for wireless networking information
 #include <pcap.h> // Header for the pcap library, used for packet capture and injection
 #include <signal.h> // Header for signal handling, used for setting up signal handlers
@@ -127,7 +128,7 @@ union IEEE80211Frame {
 typedef struct iwreq IWReq; // Typedef for Wireless Extensions request structure
 
 // Constant for packet size, used in various parts of the program
-const unsigned int PACKET_SIZE = RADIOTAPFRAME_SIZE + IEEE80211FRAME_SIZE;
+const int PACKET_SIZE = RADIOTAPFRAME_SIZE + IEEE80211FRAME_SIZE;
 
 // Various program configuration flags and settings
 int flagMarkWithFCS = 0; // Flag to mark packets with FCS (CRC) already
@@ -163,7 +164,7 @@ unsigned int selectedChannel = 1;
 unsigned int selectedRateIndex = 3;
 
 // Maximum transmit unit (MTU) size
-unsigned int selectedMTUSize = MAX_MTU_SIZE;
+int selectedMTUSize = MAX_MTU_SIZE;
 
 // Variables for keyboard input handling
 unsigned char chars, keyboardBuff[3];
@@ -436,7 +437,7 @@ void dumpPacketData(const char *ptr, int nLength) {
   printf("[%08d]: ", nLength);
 
   // Loop through each character in the packet data.
-  for (size_t i = 0; i < nLength; i++) {
+  for (int i = 0; i < nLength; i++) {
     char currentChar = ptr[i];
 
     // Check if the current character is a printable character (ASCII 32 to
@@ -782,6 +783,257 @@ int setMTU(const char *ifaceName, unsigned short mtuBytes) {
   return result;
 }
 
+int radioTapParser(const unsigned char *buf, int buflen) {
+
+  int data[32] = {0};
+  struct ieee80211_radiotap_iterator rtapIterator;
+  int retValue =
+      ieee80211_radiotap_iterator_init(&rtapIterator, buf, buflen, NULL);
+
+  printf("\033[1;32mRadioTap:%02d ", rtapIterator._max_length);
+  while (!retValue) {
+    retValue = ieee80211_radiotap_iterator_next(&rtapIterator);
+    if (retValue)
+      continue;
+
+    switch (rtapIterator.this_arg_index) {
+      /*
+       * You must take care when dereferencing iterator.this_arg
+       * for multibyte types... the pointer is not aligned.  Use
+       * get_unaligned((type *)iterator.this_arg) to dereference
+       * iterator.this_arg for type "type" safely on all arches.
+       */
+    case IEEE80211_RADIOTAP_TSFT: // 0, u64
+      printf("TSFT: ");
+      break;
+
+    case IEEE80211_RADIOTAP_FLAGS: // 1, u8
+      data[0] = rtapIterator.this_arg[0];
+      printf("FLAGS[");
+      if (data[0] & IEEE80211_RADIOTAP_F_CFP)
+        printf(" CFP");
+      if (data[0] & IEEE80211_RADIOTAP_F_SHORTPRE)
+        printf(" PREM");
+      if (data[0] & IEEE80211_RADIOTAP_F_WEP)
+        printf(" WEP");
+      if (data[0] & IEEE80211_RADIOTAP_F_FRAG)
+        printf(" FRAG");
+      if (data[0] & IEEE80211_RADIOTAP_F_FCS)
+        printf(" FCS");
+      if (data[0] & IEEE80211_RADIOTAP_F_DATAPAD)
+        printf(" DPAD");
+      if (data[0] & IEEE80211_RADIOTAP_F_BADFCS)
+        printf(" BADFCS");
+      if (data[0] & 0x80)
+        printf(" SHORTGI");
+      printf(" ] ");
+      break;
+
+    case IEEE80211_RADIOTAP_RATE: // 2, u8, Unit 0.5Mbps
+      printf("RATE:%03d ", rtapIterator.this_arg[0] / 2);
+      break;
+
+    case IEEE80211_RADIOTAP_CHANNEL: // 3, freq:u16 flags:u16
+      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
+      data[1] = get_unaligned_le16(&rtapIterator.this_arg[2]);
+      printf("CHFREQ:%04d[", data[0]);
+      if (data[1] & 0x0010)
+        printf(" TURBO");
+      if (data[1] & IEEE80211_CHAN_CCK)
+        printf(" CCK");
+      if (data[1] & IEEE80211_CHAN_OFDM)
+        printf(" OFDM");
+      if (data[1] & IEEE80211_CHAN_2GHZ)
+        printf(" 2G");
+      if (data[1] & IEEE80211_CHAN_5GHZ)
+        printf(" 5G");
+      if (data[1] & 0x0200)
+        printf(" PASSIVE");
+      if (data[1] & IEEE80211_CHAN_DYN)
+        printf(" DYNAMIC");
+      if (data[1] & 0x0800)
+        printf(" GFSK");
+      if (data[1] & 0x1000)
+        printf(" GSM");
+      if (data[1] & 0x2000)
+        printf(" STATICTURBO");
+      if (data[1] & IEEE80211_CHAN_HALF)
+        printf(" 10MHZ");
+      if (data[1] & IEEE80211_CHAN_QUARTER)
+        printf(" 5MHZ");
+      printf(" ] ");
+      break;
+
+    case IEEE80211_RADIOTAP_FHSS: // 4, hopset:u8, hoppattern:u8
+      printf("FHSS:%03d %03d ", rtapIterator.this_arg[0],
+             rtapIterator.this_arg[1]);
+      break;
+
+    case IEEE80211_RADIOTAP_DBM_ANTSIGNAL: // 5, u8
+      printf("ANTSIGDBM:%03d ", (char)rtapIterator.this_arg[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_DBM_ANTNOISE: // 6,
+      break;
+
+    case IEEE80211_RADIOTAP_LOCK_QUALITY: // 7, u16
+      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
+      printf("QUALLITY:%04X ", data[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_TX_ATTENUATION: // 8, u16
+      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
+      printf("TXATT:%04X ", data[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_DB_TX_ATTENUATION: // 9, u16
+      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
+      printf("TXATT:%04X ", data[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_DBM_TX_POWER: // 10, u8
+      printf("TX:%02d ", rtapIterator.this_arg[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_ANTENNA: // 11, u8
+      printf("ANT:%01d ", rtapIterator.this_arg[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_DB_ANTSIGNAL: // 12, u8
+      printf("ANTSIG:%02d ", rtapIterator.this_arg[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_DB_ANTNOISE: // 13,
+      break;
+
+    case IEEE80211_RADIOTAP_RX_FLAGS: // 14, u16
+      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
+      printf("RXFLAGS:%04X ", data[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_TX_FLAGS: // 15, u16
+      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
+      printf("TXFLAGS:%04X ", data[0]);
+      break;
+
+    case IEEE80211_RADIOTAP_RTS_RETRIES: // 16,
+      printf("RTS: ");
+      break;
+
+    case IEEE80211_RADIOTAP_DATA_RETRIES: // 17,
+      printf("RETRY: ");
+      break;
+
+    case IEEE80211_RADIOTAP_MCS: // 19, u8 , u8 , u8
+      // MCS Index Reference:
+      // https://en.wikipedia.org/wiki/IEEE_802.11n-2009#Data_rates
+      data[0] = rtapIterator.this_arg[0]; // Known
+      data[1] = rtapIterator.this_arg[1]; // Flags
+      data[2] = rtapIterator.this_arg[2]; // MCS Index
+      printf("MCS:");
+      // 0:20, 1:40, 2:20L, 3:20U
+      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_BW)
+        printf("BW[%d]", (data[1] & IEEE80211_RADIOTAP_MCS_BW_MASK));
+      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_MCS)
+        printf("INDEX[%d]", data[2]);
+      // 0:LongGI, 1:ShortGI
+      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_GI)
+        printf("GI[%s]",
+               (data[1] & IEEE80211_RADIOTAP_MCS_SGI) ? "Short" : "Long");
+      // 0:Mixed, 1:Greenfield
+      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_FMT)
+        printf("HT[%s]",
+               (data[1] & IEEE80211_RADIOTAP_MCS_FMT_GF) ? "GF" : "Mix");
+      // 0:BCC, 1:LDPC
+      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_FEC)
+        printf("FEC[%s]",
+               (data[1] & IEEE80211_RADIOTAP_MCS_FEC_LDPC) ? "LDPC" : "BCC");
+      // STBC [0-3]
+      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_STBC)
+        printf("STBC[%d]", (data[1] & IEEE80211_RADIOTAP_MCS_STBC_MASK));
+      if (data[0] & 0x40) // NESS:Number of extension spatial streams
+        printf("NESS[%d,%d]", (data[0] & 0x80), (data[1] & 0x80)); // MSB, LSB
+      printf(" ");
+      break;
+
+    case IEEE80211_RADIOTAP_AMPDU_STATUS: // 20, referencenumber:u32, flags:u16,
+                                          // crc:u8, reserved:u8
+      data[0] = get_unaligned_le32(&rtapIterator.this_arg[0]);
+      data[1] = get_unaligned_le16(&rtapIterator.this_arg[4]);
+      printf("AMPDU: %04X ", data[1]);
+      break;
+
+    case IEEE80211_RADIOTAP_VHT: // 21, known:u16, flags:u8, bandwidth:u8,
+                                 // mcs_nss:u8, coding:u8, group_id:u8,
+                                 // partial_aid:u16
+      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
+      data[1] = rtapIterator.this_arg[2];
+      data[2] = rtapIterator.this_arg[3];
+      data[3] = rtapIterator.this_arg[4];
+      data[4] = rtapIterator.this_arg[5];
+      data[5] = rtapIterator.this_arg[6];
+      printf("VHT:");
+      // Space-time block coding: 0:No user has STBC, 1:All users have
+      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_STBC)
+        printf("STBC[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
+      // 0:STAs may doze during TXOP
+      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_TXOP_PS_NA)
+        printf("TXOP[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_TXOP_PS_NA));
+      // 0:LongGI, 1:ShortGI
+      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_GI)
+        printf("GI[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_SGI));
+      // Short GI NSYM disambiguation
+      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_SGI_NSYM_DIS)
+        printf("NSYM[%d]",
+               (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_SGI_NSYM_M10_9));
+      // LDPC Extra OFDM symbol
+      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_LDPC_EXTRA_OFDM_SYM)
+        printf("OFDM[%d]",
+               (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_LDPC_EXTRA_OFDM_SYM));
+      // Beamformed
+      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_BEAMFORMED)
+        printf("BEAM[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_BEAMFORMED));
+      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_BANDWIDTH)
+      //   printf("BW[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
+      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_GROUP_ID)
+      //   printf("GROUPID[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
+      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_PARTIAL_AID)
+      //   printf("PAID[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
+      printf(" ");
+      break;
+
+    case IEEE80211_RADIOTAP_TIMESTAMP: // 22,
+      printf("TIME: ");
+      break;
+
+    case IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE: // 29,
+      printf("NS: ");
+      break;
+
+    case IEEE80211_RADIOTAP_VENDOR_NAMESPACE: // 30,
+      printf("VNS: ");
+      break;
+
+    case IEEE80211_RADIOTAP_EXT: // 31
+      printf("EXT: ");
+      break;
+
+    default:
+      break;
+    }
+  }
+
+  printf("\033[0m\n");
+  return rtapIterator._max_length;
+
+  // if (retValue != -ENOENT)
+  //   return -1;
+  /* discard the radiotap header part */
+  // buf += rtapIterator._max_length;
+  // buflen -= rtapIterator._max_length;
+}
+
+
 /**
  * @brief Main function for the Wi-Fi Packet Injector program.
  *
@@ -869,7 +1121,7 @@ int main(int argc, char *argv[]) {
 
   // Initialize Radiotap header structure
   union RadiotapHeader rt;
-  rt.fields.revision = 0;
+  rt.fields.revision = PKTHDR_RADIOTAP_VERSION;
   rt.fields.padding = 0;
   rt.fields.length = RADIOTAPFRAME_SIZE;
   rt.fields.pFlags[0].data = 0xA00040AE;
@@ -972,7 +1224,8 @@ int main(int argc, char *argv[]) {
 
   do {
     chars = getKeyboard(keyboardBuff);
-    if (chars == 1) /* Standard character */ {
+    if (chars == 1) /* Standard character */
+    {
       // Standard character handling (toggle flags, adjust settings, etc.)
       switch (keyboardBuff[0]) {
       case 'r':
@@ -1032,7 +1285,8 @@ int main(int argc, char *argv[]) {
       default:
         break;
       }
-    } else if (chars == 3) /* Special character*/ {
+    } else if (chars == 3) /* Special character*/
+    {
       // Special character handling (e.g., arrow keys)
       if (keyboardBuff[0] == 27 && keyboardBuff[1] == 91) {
         switch (keyboardBuff[2]) {
@@ -1092,7 +1346,7 @@ int main(int argc, char *argv[]) {
         pcap_next_ex(pcap, &pktMetadata, (const unsigned char **)&packet);
     int capturedBytes = pktMetadata->caplen;
 
-    if (capturedBytes) {
+    if (capturedBytes > 0) {
       switch (readPacketStatus) {
       case 0:
         // packets are being read from a live capture and the packet buffer
@@ -1111,11 +1365,13 @@ int main(int argc, char *argv[]) {
         totalRXBytes += capturedBytes;
 
         if (capturedBytes >= PACKET_SIZE) {
+
           rt1 = (union RadiotapHeader *)(packet);
           frame1 = (union IEEE80211Frame *)(packet + RADIOTAPFRAME_SIZE);
 
           if (flagShowRadioTap) {
-            printRadiotapHeader(rt1);
+            // printRadiotapHeader(rt1);
+            radioTapParser(packet, capturedBytes);
           }
           if (flagShowIEEE80211) {
             printIEEE80211Frame(frame1);
