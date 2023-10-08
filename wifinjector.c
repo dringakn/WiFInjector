@@ -1331,7 +1331,9 @@ int main(int argc, char *argv[]) {
               rxbytes = capturedBytes - rtapIterator._max_length -
                         IEEE80211FRAME_SIZE;
               if (flagShowPacket && (rxbytes > 0)) {
-                dumpPacketData(packet + PACKET_SIZE, rxbytes);
+                dumpPacketData(
+                    packet + rtapIterator._max_length + IEEE80211FRAME_SIZE,
+                    rxbytes);
               }
             }
           }
