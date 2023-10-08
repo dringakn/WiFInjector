@@ -1,98 +1,100 @@
-#include "radiotap.h" // Radiotap parser
-#include <getopt.h>   // Header for processing command-line options using getopt
-#include <linux/wireless.h> // Header for Wireless Extensions, used for wireless networking information
-#include <pcap.h> // Header for the pcap library, used for packet capture and injection
-#include <signal.h> // Header for signal handling, used for setting up signal handlers
-#include <stdlib.h> // Header for standard library functions, such as memory allocation and exit codes
-#include <string.h> // Header for string manipulation functions, like strcpy and memcpy
-#include <sys/ioctl.h> // Header for ioctl system call, used for low-level device control
-#include <termios.h> // Header for terminal I/O handling, used for keyboard input handling
-#include <unistd.h> // Header for POSIX system calls, like close() and usleep()
+#include <getopt.h>  // Header for processing command-line options using getopt
+#include <linux/wireless.h>  // Header for Wireless Extensions, used for wireless networking information
+#include <pcap.h>  // Header for the pcap library, used for packet capture and injection
+#include <signal.h>  // Header for signal handling, used for setting up signal handlers
+#include <stdlib.h>  // Header for standard library functions, such as memory allocation and exit codes
+#include <string.h>  // Header for string manipulation functions, like strcpy and memcpy
+#include <sys/ioctl.h>  // Header for ioctl system call, used for low-level device control
+#include <termios.h>  // Header for terminal I/O handling, used for keyboard input handling
+#include <unistd.h>  // Header for POSIX system calls, like close() and usleep()
 
-#define MAX_BUFF_SIZE 4096     // Maximum buffer size for packet data
-#define MAX_MTU_SIZE 1500      // Maximum MTU (Maximum Transmit Unit) size
-#define MAX_TX_POWER 40        // Maximum allowed transmit power in dBm
-#define MAX_DELAY 1000         // Maximum delay in milliseconds
-#define MAX_CHANNEL 165        // Maximum supported channel number
-#define MAX_MAC_BUFF_SIZE 6    // MAC Address array size
-#define HOSTNAME_BUFF_SIZE 256 // Hostname buffer
-#define OFFSET_FLAGS 16        // Offset for flags in packet data
-#define OFFSET_RATE 17         // Offset for data rate in packet data
-#define MCS_OFFSET 25          // Offset for MCS rate in packet data
-#define MCS_RATE_OFFSET 27     // Offset for MCS rate index in packet data
-#define MAX_RATES 12           // Rate array size
-#define RADIOTAPFRAME_SIZE 32  // Size of the Radiotap header frame
-#define IEEE80211FRAME_SIZE 24 // Size of the IEEE 802.11 frame
+#include "radiotap.h"  // Radiotap parser
+
+#define MAX_BUFF_SIZE 4096      // Maximum buffer size for packet data
+#define MAX_MTU_SIZE 1500       // Maximum MTU (Maximum Transmit Unit) size
+#define MAX_TX_POWER 40         // Maximum allowed transmit power in dBm
+#define MAX_DELAY 1000          // Maximum delay in milliseconds
+#define MAX_CHANNEL 165         // Maximum supported channel number
+#define MAX_MAC_BUFF_SIZE 6     // MAC Address array size
+#define HOSTNAME_BUFF_SIZE 256  // Hostname buffer
+#define OFFSET_FLAGS 16         // Offset for flags in packet data
+#define OFFSET_RATE 17          // Offset for data rate in packet data
+#define MCS_OFFSET 25           // Offset for MCS rate in packet data
+#define MCS_RATE_OFFSET 27      // Offset for MCS rate index in packet data
+#define MAX_RATES 12            // Rate array size
+#define RADIOTAPFRAME_SIZE 32   // Size of the Radiotap header frame
+#define IEEE80211FRAME_SIZE 24  // Size of the IEEE 802.11 frame
 
 // Definition of a union representing Radiotap header
 union RadiotapHeader {
   struct {
     // Radiotap header fields
-    unsigned char revision; // Revision of the Radiotap header
-    unsigned char padding;  // Padding or alignment
-    unsigned short length;  // Overall Radiotap header length
+    unsigned char revision;  // Revision of the Radiotap header
+    unsigned char padding;   // Padding or alignment
+    unsigned short length;   // Overall Radiotap header length
     union {
       struct {
-        unsigned int tsft : 1;              // Timestamp is present
-        unsigned int flags : 1;             // Flags field is present
-        unsigned int rate : 1;              // Data Rate is present
-        unsigned int channel : 1;           // Channel information is present
-        unsigned int fhss : 1;              // FHSS is present
-        unsigned int dbm_signal : 1;        // dBm signal strength is present
-        unsigned int dbm_noise : 1;         // dBm noise level is present
-        unsigned int lock_quality : 1;      // Lock quality is present
-        unsigned int tx_attenuation : 1;    // Transmit attenuation is present
-        unsigned int db_tx_attenuation : 1; // dB transmit attenuation is pres
-        unsigned int dbm_tx_power : 1;      // dBm transmit power is present
-        unsigned int antenna : 1;           // Antenna information is present
-        unsigned int db_antsignal : 1; // dB antenna signal strength is present
-        unsigned int db_antnoise : 1;  // dB antenna noise level is present
-        unsigned int rx_flags : 1;     // Receive flags are present
+        unsigned int tsft : 1;               // Timestamp is present
+        unsigned int flags : 1;              // Flags field is present
+        unsigned int rate : 1;               // Data Rate is present
+        unsigned int channel : 1;            // Channel information is present
+        unsigned int fhss : 1;               // FHSS is present
+        unsigned int dbm_signal : 1;         // dBm signal strength is present
+        unsigned int dbm_noise : 1;          // dBm noise level is present
+        unsigned int lock_quality : 1;       // Lock quality is present
+        unsigned int tx_attenuation : 1;     // Transmit attenuation is present
+        unsigned int db_tx_attenuation : 1;  // dB transmit attenuation is pres
+        unsigned int dbm_tx_power : 1;       // dBm transmit power is present
+        unsigned int antenna : 1;            // Antenna information is present
+        unsigned int db_antsignal : 1;  // dB antenna signal strength is present
+        unsigned int db_antnoise : 1;   // dB antenna noise level is present
+        unsigned int rx_flags : 1;      // Receive flags are present
         // unsigned int reserved : 16;    // Reserved bits
       } fields;
       unsigned int data;
-    } pFlags[3]; // First present word
+    } pFlags[3];  // First present word
 
     union {
       struct {
-        unsigned char cfp : 1;        // CFP: Contention-Free Period
-        unsigned char preamble : 1;   // Short Preamble
-        unsigned char wep : 1;        // WEP Encrypted
-        unsigned char fragmented : 1; // Fragmentation
-        unsigned char fcs : 1;        // FCS at end
-        unsigned char data_pad : 1;   // Data padding
-        unsigned char bad_fcs : 1;    // Bad FCS
-        unsigned char short_gi : 1;   // Short Guard Interval
+        unsigned char cfp : 1;         // CFP: Contention-Free Period
+        unsigned char preamble : 1;    // Short Preamble
+        unsigned char wep : 1;         // WEP Encrypted
+        unsigned char fragmented : 1;  // Fragmentation
+        unsigned char fcs : 1;         // FCS at end
+        unsigned char data_pad : 1;    // Data padding
+        unsigned char bad_fcs : 1;     // Bad FCS
+        unsigned char short_gi : 1;    // Short Guard Interval
       } fields;
       unsigned char data;
-    } flags;                    // Flags
-    unsigned char dataRate;     // Data rate
-    unsigned short chFrequency; // Channel frequency
+    } flags;                     // Flags
+    unsigned char dataRate;      // Data rate
+    unsigned short chFrequency;  // Channel frequency
     union {
       struct {
-        unsigned short padding : 4;  // padding
-        unsigned short turbo : 1;    // Turbo channel
-        unsigned short CCK : 1;      // CCK channel
-        unsigned short OFDM : 1;     // OFDM channel
-        unsigned short band2GHz : 1; // 2 GHz spectrum channel
-        unsigned short band5GHz : 1; // 5 GHz spectrum channel
-        unsigned short passive : 1; // Passive channel (don't use for FCS check)
-        unsigned short dynamicCCKOFDM : 1; // Dynamic channel (CCK-OFDM)
-        unsigned short GFSK : 1;           // Gaussian Frequency Shift Keying
-        unsigned short GSM : 1;            // Half rate channel
-        unsigned short staticTurbo : 1;    // Half rate channel
-        unsigned short chWidth10MHz : 1;   // Half rate channel
-        unsigned short chWidth5MHz : 1;    // Quarter rate channel
+        unsigned short padding : 4;   // padding
+        unsigned short turbo : 1;     // Turbo channel
+        unsigned short CCK : 1;       // CCK channel
+        unsigned short OFDM : 1;      // OFDM channel
+        unsigned short band2GHz : 1;  // 2 GHz spectrum channel
+        unsigned short band5GHz : 1;  // 5 GHz spectrum channel
+        unsigned short
+            passive : 1;  // Passive channel (don't use for FCS check)
+        unsigned short dynamicCCKOFDM : 1;  // Dynamic channel (CCK-OFDM)
+        unsigned short GFSK : 1;            // Gaussian Frequency Shift Keying
+        unsigned short GSM : 1;             // Half rate channel
+        unsigned short staticTurbo : 1;     // Half rate channel
+        unsigned short chWidth10MHz : 1;    // Half rate channel
+        unsigned short chWidth5MHz : 1;     // Quarter rate channel
       } fields;
       unsigned short data;
-    } chFlags;                    // Channel flags
-    char RSSI;                    // Received Signal Strength Indicator (RSSI)
-    unsigned short signalQuality; // Signal quality
-    unsigned short rxFlags;       // Receiver flags
-    char RSSI1;                   // RSSI for antenna 1
-    unsigned char antenna1;       // Antenna 1
-    char RSSI2;                   // RSSI for antenna 2
-    unsigned char antenna2;       // Antenna 2
+    } chFlags;                     // Channel flags
+    char RSSI;                     // Received Signal Strength Indicator (RSSI)
+    unsigned short signalQuality;  // Signal quality
+    unsigned short rxFlags;        // Receiver flags
+    char RSSI1;                    // RSSI for antenna 1
+    unsigned char antenna1;        // Antenna 1
+    char RSSI2;                    // RSSI for antenna 2
+    unsigned char antenna2;        // Antenna 2
   } fields;
   unsigned char data[RADIOTAPFRAME_SIZE];
 };
@@ -102,54 +104,55 @@ union IEEE80211Frame {
   struct {
     union {
       struct {
-        unsigned short protocolVersion : 2; // Protocol Version (bits 0-1)
-        unsigned short type : 2;            // Type (bits 2-3)
-        unsigned short subtype : 4;         // Subtype (bits 4-7)
-        unsigned short toDS : 1;            // To DS (bit 8)
-        unsigned short fromDS : 1;          // From DS (bit 9)
-        unsigned short moreFragments : 1;   // More Fragments (bit 10)
-        unsigned short retry : 1;           // Retry (bit 11)
-        unsigned short pwrMgmt : 1;         // Power Management (bit 12)
-        unsigned short moreData : 1;        // More Data (bit 13)
-        unsigned short wep : 1;             // WEP (bit 14)
-        unsigned short order : 1;           // Order (bit 15)
+        unsigned short protocolVersion : 2;  // Protocol Version (bits 0-1)
+        unsigned short type : 2;             // Type (bits 2-3)
+        unsigned short subtype : 4;          // Subtype (bits 4-7)
+        unsigned short toDS : 1;             // To DS (bit 8)
+        unsigned short fromDS : 1;           // From DS (bit 9)
+        unsigned short moreFragments : 1;    // More Fragments (bit 10)
+        unsigned short retry : 1;            // Retry (bit 11)
+        unsigned short pwrMgmt : 1;          // Power Management (bit 12)
+        unsigned short moreData : 1;         // More Data (bit 13)
+        unsigned short wep : 1;              // WEP (bit 14)
+        unsigned short order : 1;            // Order (bit 15)
       } fields;
       unsigned short data;
-    } frameControl;                                 // Frame control
-    unsigned short duration;                        // Duration
-    unsigned char destAddress[MAX_MAC_BUFF_SIZE];   // Destination MAC address
-    unsigned char sourceAddress[MAX_MAC_BUFF_SIZE]; // Source MAC address
-    unsigned char bssid[MAX_MAC_BUFF_SIZE]; // Basic Service Set Identifier
-    unsigned short sequenceControl;         // Sequence control
+    } frameControl;                                  // Frame control
+    unsigned short duration;                         // Duration
+    unsigned char destAddress[MAX_MAC_BUFF_SIZE];    // Destination MAC address
+    unsigned char sourceAddress[MAX_MAC_BUFF_SIZE];  // Source MAC address
+    unsigned char bssid[MAX_MAC_BUFF_SIZE];  // Basic Service Set Identifier
+    unsigned short sequenceControl;          // Sequence control
   } fields;
   unsigned char data[IEEE80211FRAME_SIZE];
 };
 
-typedef struct iwreq IWReq; // Typedef for Wireless Extensions request structure
+typedef struct iwreq
+    IWReq;  // Typedef for Wireless Extensions request structure
 
 // Constant for packet size, used in various parts of the program
 const int PACKET_SIZE = RADIOTAPFRAME_SIZE + IEEE80211FRAME_SIZE;
 
 // Various program configuration flags and settings
-int flagMarkWithFCS = 0; // Flag to mark packets with FCS (CRC) already
+int flagMarkWithFCS = 0;  // Flag to mark packets with FCS (CRC) already
 int flagNonBlocking =
-    1; // Flag to set non-blocking mode (1: non-blocking, 0: blocking)
-int flagShowRadioTap = 0;   // Flag to show Radiotap header information
-int flagShowIEEE80211 = 0;  // Flag to show IEEE 802.11 frame information
-int flagShowPacket = 0;     // Flag to show packet data
-int flagShowStats = 1;      // Flag to show statistics
-int flagEnableTransmit = 0; // Flag to enable packet transmission
+    1;  // Flag to set non-blocking mode (1: non-blocking, 0: blocking)
+int flagShowRadioTap = 0;    // Flag to show Radiotap header information
+int flagShowIEEE80211 = 0;   // Flag to show IEEE 802.11 frame information
+int flagShowPacket = 0;      // Flag to show packet data
+int flagShowStats = 1;       // Flag to show statistics
+int flagEnableTransmit = 0;  // Flag to enable packet transmission
 
 // Statistics counters for packet transmission and reception
-unsigned int totalTXPacket = 0;  // Total transmitted packets per second
-unsigned int totalTXBytes = 0;   // Total transmitted bytes per second
-unsigned int totalRXPackets = 0; // Total received packets per second
-unsigned int totalRXBytes = 0;   // Total received bytes per second
+unsigned int totalTXPacket = 0;   // Total transmitted packets per second
+unsigned int totalTXBytes = 0;    // Total transmitted bytes per second
+unsigned int totalRXPackets = 0;  // Total received packets per second
+unsigned int totalRXBytes = 0;    // Total received bytes per second
 
 unsigned int totalTXFPacket = 0;  // Total failed transmitted packets per second
 unsigned int totalTXFBytes = 0;   // Total failed transmitted bytes per second
-unsigned int totalRXFPackets = 0; // Total failed received packets per second
-unsigned int totalRXFBytes = 0;   // Total failed received bytes per second
+unsigned int totalRXFPackets = 0;  // Total failed received packets per second
+unsigned int totalRXFBytes = 0;    // Total failed received bytes per second
 
 // Delay between packet transmissions in milliseconds
 unsigned int delay = 1;
@@ -173,8 +176,8 @@ unsigned char chars, keyboardBuff[3];
 char hostNameBuff[HOSTNAME_BUFF_SIZE] = {0x00};
 
 // MAC address of the host device
-unsigned char deviceMACAddress[MAX_MAC_BUFF_SIZE] = {0xFF}; // Host MAC
-unsigned char destMACAddress[MAX_MAC_BUFF_SIZE] = {0xFF};   // Destination MAC
+unsigned char deviceMACAddress[MAX_MAC_BUFF_SIZE] = {0xFF};  // Host MAC
+unsigned char destMACAddress[MAX_MAC_BUFF_SIZE] = {0xFF};    // Destination MAC
 char rxBuffer[MAX_BUFF_SIZE] = {' '};
 char txBuffer[MAX_BUFF_SIZE] = {' '};
 
@@ -223,7 +226,7 @@ int wifiChannelToFrequency(int channel) {
  * error).
  */
 unsigned char getKeyboard(unsigned char kbBuffer[3]) {
-  unsigned char chrCounts = 0; // Buffer to input character
+  unsigned char chrCounts = 0;  // Buffer to input character
   struct termios orig_term_attr;
   struct termios new_term_attr;
 
@@ -246,7 +249,7 @@ unsigned char getKeyboard(unsigned char kbBuffer[3]) {
 
   // Read a character from the stdin stream without blocking
   // Returns EOF (-1) if no character is available
-  chrCounts = read(STDIN_FILENO, kbBuffer, 3); // Read the character
+  chrCounts = read(STDIN_FILENO, kbBuffer, 3);  // Read the character
 
   // Restore the original terminal attributes
   tcsetattr(STDIN_FILENO, TCSANOW, &orig_term_attr);
@@ -269,7 +272,6 @@ unsigned char getKeyboard(unsigned char kbBuffer[3]) {
  * @param sig The signal number (SIGALRM in this case).
  */
 void sigalrm_handler(int sig) {
-
   /*
   Note:
   \033[ starts the escape sequence.
@@ -296,16 +298,17 @@ void sigalrm_handler(int sig) {
     // Calculate success rate (percentage of received packets)
     int successRate = (totalTXBytes) ? totalRXPackets * 100 / totalTXPacket : 0;
     // Print statistics including received and transmitted data
-    printf("\033[1;33m[%s] RxPacketRate:%03u[%03u] RXBPS:%05u[%05u] "
-           "TxPacketRate:%03u[%03u] "
-           "TXBPS:%05u[%05u] "
-           "TX[%01d]NB[%01d]D[%02u]PWR[%02u]CH[%03u]MTU[%04u]RATE[%02d]SUCCESS["
-           "%03d]\033[0m\n",
-           hostNameBuff, totalRXPackets, totalRXFPackets, totalRXBytes,
-           totalRXFBytes, totalTXPacket, totalTXFPacket, totalTXBytes,
-           totalTXFBytes, flagEnableTransmit, flagNonBlocking, delay,
-           selectedTxPower, selectedChannel, selectedMTUSize,
-           rates[selectedRateIndex], successRate);
+    printf(
+        "\033[1;33m[%s] RxPacketRate:%03u[%03u] RXBPS:%05u[%05u] "
+        "TxPacketRate:%03u[%03u] "
+        "TXBPS:%05u[%05u] "
+        "TX[%01d]NB[%01d]D[%02u]PWR[%02u]CH[%03u]MTU[%04u]RATE[%02d]SUCCESS["
+        "%03d]\033[0m\n",
+        hostNameBuff, totalRXPackets, totalRXFPackets, totalRXBytes,
+        totalRXFBytes, totalTXPacket, totalTXFPacket, totalTXBytes,
+        totalTXFBytes, flagEnableTransmit, flagNonBlocking, delay,
+        selectedTxPower, selectedChannel, selectedMTUSize,
+        rates[selectedRateIndex], successRate);
   }
 
   // Reset counters for transmitted and received data
@@ -323,9 +326,9 @@ void sigalrm_handler(int sig) {
 
   // Set the timer for the next signal
   struct itimerval tout_val;
-  tout_val.it_interval.tv_sec = 1; // Interval in seconds
+  tout_val.it_interval.tv_sec = 1;  // Interval in seconds
   tout_val.it_interval.tv_usec = 0;
-  tout_val.it_value.tv_sec = 1; // Initial delay in seconds
+  tout_val.it_value.tv_sec = 1;  // Initial delay in seconds
   tout_val.it_value.tv_usec = 0;
   // Set the timer using setitimer to trigger the signal periodically
   setitimer(ITIMER_REAL, &tout_val, 0);
@@ -338,65 +341,31 @@ void sigalrm_handler(int sig) {
  * how to use the wifinjector program and its command-line options.
  */
 void usage(void) {
-  printf("Usage: wifinjector [options] <interface>\n\n"
-         "Options:\n"
-         "  -f, --fcs           Mark as having FCS (CRC) already\n"
-         "  -b, --blocking      Set blocking mode, default otherwise "
-         "non-blocking\n"
-         "  -r, --radiotap      Show Radiotap header\n"
-         "  -i, --ieee80211     Show IEEE802.11 frame\n"
-         "  -p, --packet        Show packet data\n"
-         "  -s, --stats         Show statistics\n"
-         "  -t, --transmit      Enable packet transmission\n"
-         "  -h, --help          Display this help message\n\n"
-         "Keyboard Shortcuts:\n"
-         "  - Press 'r' or 'R' to toggle Radiotap header display\n"
-         "  - Press 'i' or 'I' to toggle IEEE802.11 frame display\n"
-         "  - Press 'p' or 'P' to toggle packet data display\n"
-         "  - Press 's' or 'S' to toggle statistics display\n"
-         "  - Press 't' or 'T' to toggle packet transmission\n"
-         "  - Press 'j' or 'J' to decrease MTU size\n"
-         "  - Press 'k' or 'K' to increase MTU size\n"
-         "  - Press 'n' or 'N' to decrease data rate\n"
-         "  - Press 'm' or 'M' to increase data rate\n"
-         "  - Press 'q' or 'Q' to quit the program\n\n");
+  printf(
+      "Usage: wifinjector [options] <interface>\n\n"
+      "Options:\n"
+      "  -f, --fcs           Mark as having FCS (CRC) already\n"
+      "  -b, --blocking      Set blocking mode, default otherwise "
+      "non-blocking\n"
+      "  -r, --radiotap      Show Radiotap header\n"
+      "  -i, --ieee80211     Show IEEE802.11 frame\n"
+      "  -p, --packet        Show packet data\n"
+      "  -s, --stats         Show statistics\n"
+      "  -t, --transmit      Enable packet transmission\n"
+      "  -h, --help          Display this help message\n\n"
+      "Keyboard Shortcuts:\n"
+      "  - Press 'r' or 'R' to toggle Radiotap header display\n"
+      "  - Press 'i' or 'I' to toggle IEEE802.11 frame display\n"
+      "  - Press 'p' or 'P' to toggle packet data display\n"
+      "  - Press 's' or 'S' to toggle statistics display\n"
+      "  - Press 't' or 'T' to toggle packet transmission\n"
+      "  - Press 'j' or 'J' to decrease MTU size\n"
+      "  - Press 'k' or 'K' to increase MTU size\n"
+      "  - Press 'n' or 'N' to decrease data rate\n"
+      "  - Press 'm' or 'M' to increase data rate\n"
+      "  - Press 'q' or 'Q' to quit the program\n\n");
   // Exit the program with a non-zero status code to indicate an error.
   exit(1);
-}
-
-/**
- * @brief Prints information from a Radiotap header structure.
- *
- * This function takes a Radiotap header as input and prints various fields
- * from it in a formatted manner.
- *
- * @param header A pointer to a union RadiotapHeader structure.
- */
-void printRadiotapHeader(const union RadiotapHeader *header) {
-  printf("\033[1;32mV:%02X P:%02X L:%04X[%04u] P1:%08X P2:%08X P3:%08X "
-         "FLGS:%02X DR:%03u "
-         "FREQ:%04u CHFLG:%04X RSSI:%04d Q:%03d RXFLG:%04X RSSI1:%03d "
-         "ANT1:%01d RSSI2:%04d ANT2:%01d\033[0m\n",
-         // Display Radiotap header fields in the specified order
-         header->fields.revision,       // Version
-         header->fields.padding,        // Padding
-         header->fields.length,         // Length
-         header->fields.length,         // Length (repeated for clarity)
-         header->fields.pFlags[0].data, // Flags part 1
-         header->fields.pFlags[1].data, // Flags part 2
-         header->fields.pFlags[2].data, // Flags part 3
-         header->fields.flags.data,     // General flags
-         header->fields.dataRate,       // Data rate
-         header->fields.chFrequency,    // Channel frequency
-         header->fields.chFlags.data,   // Channel flags
-         header->fields.RSSI, // Received Signal Strength Indicator (RSSI)
-         header->fields.signalQuality, // Signal quality
-         header->fields.rxFlags,       // Receive flags
-         header->fields.RSSI1,         // RSSI of antenna 1
-         header->fields.antenna1,      // Antenna 1
-         header->fields.RSSI2,         // RSSI of antenna 2
-         header->fields.antenna2       // Antenna 2
-  );
 }
 
 /**
@@ -408,19 +377,20 @@ void printRadiotapHeader(const union RadiotapHeader *header) {
  * @param frame Pointer to the IEEE80211Frame structure to be printed.
  */
 void printIEEE80211Frame(const union IEEE80211Frame *frame) {
-  printf("\033[1;34mFC:0x%04X DUR:0x%04X DEST:"
-         "%02X:%02X:%02X:%02X:%02X:%02X SRC:%02X:%02X:%02X:%02X:%02X:%02X "
-         "BSSID:%02X:%02X:%02X:%02X:%02X:%02X SEQCTRL:0x%04X\033[0m\n",
-         frame->fields.frameControl.data, frame->fields.duration,
-         frame->fields.destAddress[0], frame->fields.destAddress[1],
-         frame->fields.destAddress[2], frame->fields.destAddress[3],
-         frame->fields.destAddress[4], frame->fields.destAddress[5],
-         frame->fields.sourceAddress[0], frame->fields.sourceAddress[1],
-         frame->fields.sourceAddress[2], frame->fields.sourceAddress[3],
-         frame->fields.sourceAddress[4], frame->fields.sourceAddress[5],
-         frame->fields.bssid[0], frame->fields.bssid[1], frame->fields.bssid[2],
-         frame->fields.bssid[3], frame->fields.bssid[4], frame->fields.bssid[5],
-         frame->fields.sequenceControl);
+  printf(
+      "\033[1;34mFC:0x%04X DUR:0x%04X DEST:"
+      "%02X:%02X:%02X:%02X:%02X:%02X SRC:%02X:%02X:%02X:%02X:%02X:%02X "
+      "BSSID:%02X:%02X:%02X:%02X:%02X:%02X SEQCTRL:0x%04X\033[0m\n",
+      frame->fields.frameControl.data, frame->fields.duration,
+      frame->fields.destAddress[0], frame->fields.destAddress[1],
+      frame->fields.destAddress[2], frame->fields.destAddress[3],
+      frame->fields.destAddress[4], frame->fields.destAddress[5],
+      frame->fields.sourceAddress[0], frame->fields.sourceAddress[1],
+      frame->fields.sourceAddress[2], frame->fields.sourceAddress[3],
+      frame->fields.sourceAddress[4], frame->fields.sourceAddress[5],
+      frame->fields.bssid[0], frame->fields.bssid[1], frame->fields.bssid[2],
+      frame->fields.bssid[3], frame->fields.bssid[4], frame->fields.bssid[5],
+      frame->fields.sequenceControl);
 }
 
 /**
@@ -492,12 +462,12 @@ int injectPacket(pcap_t *pcap, union RadiotapHeader *rt,
     totalTXFPacket++;
     totalTXFBytes += sentBytes;
     // perror("Trouble injecting packet");
-    return -1; // Injection failed
+    return -1;  // Injection failed
   } else {
     // Update statistics on successful injection
     totalTXPacket++;
     totalTXBytes += sentBytes;
-    return 0; // Injection successful
+    return 0;  // Injection successful
   }
 }
 
@@ -536,20 +506,20 @@ void getHostname() {
  * @return 0 on success, -1 on socket error, 1 on IOCTL error.
  */
 int sendIOCTLCommand(int configCommand, IWReq *wrq) {
-  int result = 0; // Initialize the result to indicate no error
+  int result = 0;  // Initialize the result to indicate no error
   int sock = socket(AF_INET, SOCK_DGRAM,
-                    0); // Create a socket for sending IOCTL commands
-  if (sock == -1) {     // Check for socket creation error
+                    0);  // Create a socket for sending IOCTL commands
+  if (sock == -1) {      // Check for socket creation error
     perror("Socket Error");
-    result = -1; // Set the result to indicate a socket error
+    result = -1;  // Set the result to indicate a socket error
   } else {
-    if (ioctl(sock, configCommand, wrq) == -1) { // Send the IOCTL command
+    if (ioctl(sock, configCommand, wrq) == -1) {  // Send the IOCTL command
       perror("IOCTLCommand Error");
-      result = 1; // Set the result to indicate an IOCTL error
+      result = 1;  // Set the result to indicate an IOCTL error
     }
-    close(sock); // Close the socket
+    close(sock);  // Close the socket
   }
-  return result; // Return the result code
+  return result;  // Return the result code
 }
 
 /**
@@ -605,8 +575,8 @@ int getMACAddress(const char *ifaceName) {
  * @return 0 on success, -1 on failure.
  */
 int setTXPower(const char *ifaceName, unsigned char txPower) {
-  int result = 0; // Initialize the result variable to 0 (success).
-  IWReq wrq;      // Create a struct to hold the IOCTL request parameters.
+  int result = 0;  // Initialize the result variable to 0 (success).
+  IWReq wrq;       // Create a struct to hold the IOCTL request parameters.
 
   // Clear the memory of the wrq struct to ensure it's empty.
   memset(&wrq, 0, sizeof(struct iwreq));
@@ -655,8 +625,8 @@ int setTXPower(const char *ifaceName, unsigned char txPower) {
  * @return 0 if the mode is successfully set to monitor mode, -1 otherwise.
  */
 int setMonitorMode(const char *ifaceName) {
-  int result = 0; // Initialize the result variable to success (0).
-  IWReq wrq;      // Create a structure for IOCTL requests.
+  int result = 0;  // Initialize the result variable to success (0).
+  IWReq wrq;       // Create a structure for IOCTL requests.
 
   // Clear the memory of the wrq structure to avoid garbage values.
   memset(&wrq, 0, sizeof(struct iwreq));
@@ -666,7 +636,7 @@ int setMonitorMode(const char *ifaceName) {
 
   // Check the current mode of the wireless interface using an IOCTL command.
   if (sendIOCTLCommand(SIOCGIWMODE, &wrq) == 0) {
-    printf("MODE: %d\n", wrq.u.mode); // Print the current mode.
+    printf("MODE: %d\n", wrq.u.mode);  // Print the current mode.
 
     // Set the mode to 6, which corresponds to "monitor" mode.
     wrq.u.mode = 6; /* 0=Auto, 1=Adhoc, 2=Infra, 3=master, 4=repeater,5=second,
@@ -686,7 +656,7 @@ int setMonitorMode(const char *ifaceName) {
     result = -1;
   }
 
-  return result; // Return the result code.
+  return result;  // Return the result code.
 }
 
 /**
@@ -702,8 +672,8 @@ int setMonitorMode(const char *ifaceName) {
  * @return 0 on success, -1 on failure.
  */
 int setFrequency(const char *ifaceName, unsigned char channel) {
-  int result = 0; // Initialize the result variable to indicate success.
-  IWReq wrq;      // Create a structure for IOCTL requests.
+  int result = 0;  // Initialize the result variable to indicate success.
+  IWReq wrq;       // Create a structure for IOCTL requests.
 
   // Clear the memory of the wrq structure to ensure no garbage data is present.
   memset(&wrq, 0, sizeof(struct iwreq));
@@ -733,7 +703,7 @@ int setFrequency(const char *ifaceName, unsigned char channel) {
     result = -1;
   }
 
-  return result; // Return the result code (0 for success, -1 for failure).
+  return result;  // Return the result code (0 for success, -1 for failure).
 }
 
 /**
@@ -749,8 +719,8 @@ int setFrequency(const char *ifaceName, unsigned char channel) {
  * @return 0 if the MTU is set successfully, -1 if there is an error.
  */
 int setMTU(const char *ifaceName, unsigned short mtuBytes) {
-  int result = 0; // Initialize the result variable to 0 (indicating success).
-  IWReq wrq;      // Declare a structure to hold IOCTL requests.
+  int result = 0;  // Initialize the result variable to 0 (indicating success).
+  IWReq wrq;       // Declare a structure to hold IOCTL requests.
 
   // Initialize the wrq structure with zeros to ensure no leftover data.
   memset(&wrq, 0, sizeof(struct iwreq));
@@ -783,256 +753,240 @@ int setMTU(const char *ifaceName, unsigned short mtuBytes) {
   return result;
 }
 
-int radioTapParser(const unsigned char *buf, int buflen) {
+/**
+ * @brief  Prints information from a Radiotap header structure.
+ *
+ * This function takes a Radiotap header as input and prints various fields
+ * from it in a formatted manner.
+ *
+ * @param struct ieee80211_radiotap_iterator*.
+ * @return int Length of the RadiotapHeader in the packet (-1 if error).
+ */
+int radioTapParser(struct ieee80211_radiotap_iterator *rtapIterator) {
+  int data[6] = {0}, retValue = 0;
+  printf("\033[1;32mRadioTap:%02d ", rtapIterator->_max_length);
 
-  int data[32] = {0};
-  struct ieee80211_radiotap_iterator rtapIterator;
-  int retValue =
-      ieee80211_radiotap_iterator_init(&rtapIterator, buf, buflen, NULL);
-
-  printf("\033[1;32mRadioTap:%02d ", rtapIterator._max_length);
   while (!retValue) {
-    retValue = ieee80211_radiotap_iterator_next(&rtapIterator);
-    if (retValue)
-      continue;
+    retValue = ieee80211_radiotap_iterator_next(rtapIterator);
+    if (retValue) continue;
 
-    switch (rtapIterator.this_arg_index) {
-      /*
-       * You must take care when dereferencing iterator.this_arg
-       * for multibyte types... the pointer is not aligned.  Use
-       * get_unaligned((type *)iterator.this_arg) to dereference
-       * iterator.this_arg for type "type" safely on all arches.
-       */
-    case IEEE80211_RADIOTAP_TSFT: // 0, u64
-      printf("TSFT: ");
-      break;
+    switch (rtapIterator->this_arg_index) {
+        /*
+         * You must take care when dereferencing iterator.this_arg
+         * for multibyte types... the pointer is not aligned.  Use
+         * get_unaligned((type *)iterator.this_arg) to dereference
+         * iterator.this_arg for type "type" safely on all arches.
+         */
+      case IEEE80211_RADIOTAP_TSFT:  // 0, u64
+        printf("TSFT: ");
+        break;
 
-    case IEEE80211_RADIOTAP_FLAGS: // 1, u8
-      data[0] = rtapIterator.this_arg[0];
-      printf("FLAGS[");
-      if (data[0] & IEEE80211_RADIOTAP_F_CFP)
-        printf(" CFP");
-      if (data[0] & IEEE80211_RADIOTAP_F_SHORTPRE)
-        printf(" PREM");
-      if (data[0] & IEEE80211_RADIOTAP_F_WEP)
-        printf(" WEP");
-      if (data[0] & IEEE80211_RADIOTAP_F_FRAG)
-        printf(" FRAG");
-      if (data[0] & IEEE80211_RADIOTAP_F_FCS)
-        printf(" FCS");
-      if (data[0] & IEEE80211_RADIOTAP_F_DATAPAD)
-        printf(" DPAD");
-      if (data[0] & IEEE80211_RADIOTAP_F_BADFCS)
-        printf(" BADFCS");
-      if (data[0] & 0x80)
-        printf(" SHORTGI");
-      printf(" ] ");
-      break;
+      case IEEE80211_RADIOTAP_FLAGS:  // 1, u8
+        data[0] = rtapIterator->this_arg[0];
+        printf("FLAGS[");
+        if (data[0] & IEEE80211_RADIOTAP_F_CFP) printf(" CFP");
+        if (data[0] & IEEE80211_RADIOTAP_F_SHORTPRE) printf(" PREM");
+        if (data[0] & IEEE80211_RADIOTAP_F_WEP) printf(" WEP");
+        if (data[0] & IEEE80211_RADIOTAP_F_FRAG) printf(" FRAG");
+        if (data[0] & IEEE80211_RADIOTAP_F_FCS) printf(" FCS");
+        if (data[0] & IEEE80211_RADIOTAP_F_DATAPAD) printf(" DPAD");
+        if (data[0] & IEEE80211_RADIOTAP_F_BADFCS) printf(" BADFCS");
+        if (data[0] & 0x80) printf(" SHORTGI");
+        printf(" ] ");
+        break;
 
-    case IEEE80211_RADIOTAP_RATE: // 2, u8, Unit 0.5Mbps
-      printf("RATE:%03d ", rtapIterator.this_arg[0] / 2);
-      break;
+      case IEEE80211_RADIOTAP_RATE:  // 2, u8, Unit 0.5Mbps
+        printf("RATE:%03d ", rtapIterator->this_arg[0] / 2);
+        break;
 
-    case IEEE80211_RADIOTAP_CHANNEL: // 3, freq:u16 flags:u16
-      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
-      data[1] = get_unaligned_le16(&rtapIterator.this_arg[2]);
-      printf("CHFREQ:%04d[", data[0]);
-      if (data[1] & 0x0010)
-        printf(" TURBO");
-      if (data[1] & IEEE80211_CHAN_CCK)
-        printf(" CCK");
-      if (data[1] & IEEE80211_CHAN_OFDM)
-        printf(" OFDM");
-      if (data[1] & IEEE80211_CHAN_2GHZ)
-        printf(" 2G");
-      if (data[1] & IEEE80211_CHAN_5GHZ)
-        printf(" 5G");
-      if (data[1] & 0x0200)
-        printf(" PASSIVE");
-      if (data[1] & IEEE80211_CHAN_DYN)
-        printf(" DYNAMIC");
-      if (data[1] & 0x0800)
-        printf(" GFSK");
-      if (data[1] & 0x1000)
-        printf(" GSM");
-      if (data[1] & 0x2000)
-        printf(" STATICTURBO");
-      if (data[1] & IEEE80211_CHAN_HALF)
-        printf(" 10MHZ");
-      if (data[1] & IEEE80211_CHAN_QUARTER)
-        printf(" 5MHZ");
-      printf(" ] ");
-      break;
+      case IEEE80211_RADIOTAP_CHANNEL:  // 3, freq:u16 flags:u16
+        data[0] = get_unaligned_le16(&rtapIterator->this_arg[0]);
+        data[1] = get_unaligned_le16(&rtapIterator->this_arg[2]);
+        printf("CHFREQ:%04d[", data[0]);
+        if (data[1] & 0x0010) printf(" TURBO");
+        if (data[1] & IEEE80211_CHAN_CCK) printf(" CCK");
+        if (data[1] & IEEE80211_CHAN_OFDM) printf(" OFDM");
+        if (data[1] & IEEE80211_CHAN_2GHZ) printf(" 2G");
+        if (data[1] & IEEE80211_CHAN_5GHZ) printf(" 5G");
+        if (data[1] & 0x0200) printf(" PASSIVE");
+        if (data[1] & IEEE80211_CHAN_DYN) printf(" DYNAMIC");
+        if (data[1] & 0x0800) printf(" GFSK");
+        if (data[1] & 0x1000) printf(" GSM");
+        if (data[1] & 0x2000) printf(" STATICTURBO");
+        if (data[1] & IEEE80211_CHAN_HALF) printf(" 10MHZ");
+        if (data[1] & IEEE80211_CHAN_QUARTER) printf(" 5MHZ");
+        printf(" ] ");
+        break;
 
-    case IEEE80211_RADIOTAP_FHSS: // 4, hopset:u8, hoppattern:u8
-      printf("FHSS:%03d %03d ", rtapIterator.this_arg[0],
-             rtapIterator.this_arg[1]);
-      break;
+      case IEEE80211_RADIOTAP_FHSS:  // 4, hopset:u8, hoppattern:u8
+        printf("FHSS:%03d %03d ", rtapIterator->this_arg[0],
+               rtapIterator->this_arg[1]);
+        break;
 
-    case IEEE80211_RADIOTAP_DBM_ANTSIGNAL: // 5, u8
-      printf("ANTSIGDBM:%03d ", (char)rtapIterator.this_arg[0]);
-      break;
+      case IEEE80211_RADIOTAP_DBM_ANTSIGNAL:  // 5, u8
+        printf("ANTSIGDBM:%03d ", (char)rtapIterator->this_arg[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_DBM_ANTNOISE: // 6,
-      break;
+      case IEEE80211_RADIOTAP_DBM_ANTNOISE:  // 6,
+        break;
 
-    case IEEE80211_RADIOTAP_LOCK_QUALITY: // 7, u16
-      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
-      printf("QUALLITY:%04X ", data[0]);
-      break;
+      case IEEE80211_RADIOTAP_LOCK_QUALITY:  // 7, u16
+        data[0] = get_unaligned_le16(&rtapIterator->this_arg[0]);
+        printf("QUALLITY:%04X ", data[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_TX_ATTENUATION: // 8, u16
-      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
-      printf("TXATT:%04X ", data[0]);
-      break;
+      case IEEE80211_RADIOTAP_TX_ATTENUATION:  // 8, u16
+        data[0] = get_unaligned_le16(&rtapIterator->this_arg[0]);
+        printf("TXATT:%04X ", data[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_DB_TX_ATTENUATION: // 9, u16
-      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
-      printf("TXATT:%04X ", data[0]);
-      break;
+      case IEEE80211_RADIOTAP_DB_TX_ATTENUATION:  // 9, u16
+        data[0] = get_unaligned_le16(&rtapIterator->this_arg[0]);
+        printf("TXATT:%04X ", data[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_DBM_TX_POWER: // 10, u8
-      printf("TX:%02d ", rtapIterator.this_arg[0]);
-      break;
+      case IEEE80211_RADIOTAP_DBM_TX_POWER:  // 10, u8
+        printf("TX:%02d ", rtapIterator->this_arg[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_ANTENNA: // 11, u8
-      printf("ANT:%01d ", rtapIterator.this_arg[0]);
-      break;
+      case IEEE80211_RADIOTAP_ANTENNA:  // 11, u8
+        printf("ANT:%01d ", rtapIterator->this_arg[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_DB_ANTSIGNAL: // 12, u8
-      printf("ANTSIG:%02d ", rtapIterator.this_arg[0]);
-      break;
+      case IEEE80211_RADIOTAP_DB_ANTSIGNAL:  // 12, u8
+        printf("ANTSIG:%02d ", rtapIterator->this_arg[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_DB_ANTNOISE: // 13,
-      break;
+      case IEEE80211_RADIOTAP_DB_ANTNOISE:  // 13,
+        break;
 
-    case IEEE80211_RADIOTAP_RX_FLAGS: // 14, u16
-      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
-      printf("RXFLAGS:%04X ", data[0]);
-      break;
+      case IEEE80211_RADIOTAP_RX_FLAGS:  // 14, u16
+        data[0] = get_unaligned_le16(&rtapIterator->this_arg[0]);
+        printf("RXFLAGS:%04X ", data[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_TX_FLAGS: // 15, u16
-      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
-      printf("TXFLAGS:%04X ", data[0]);
-      break;
+      case IEEE80211_RADIOTAP_TX_FLAGS:  // 15, u16
+        data[0] = get_unaligned_le16(&rtapIterator->this_arg[0]);
+        printf("TXFLAGS:%04X ", data[0]);
+        break;
 
-    case IEEE80211_RADIOTAP_RTS_RETRIES: // 16,
-      printf("RTS: ");
-      break;
+      case IEEE80211_RADIOTAP_RTS_RETRIES:  // 16,
+        printf("RTS: ");
+        break;
 
-    case IEEE80211_RADIOTAP_DATA_RETRIES: // 17,
-      printf("RETRY: ");
-      break;
+      case IEEE80211_RADIOTAP_DATA_RETRIES:  // 17,
+        printf("RETRY: ");
+        break;
 
-    case IEEE80211_RADIOTAP_MCS: // 19, u8 , u8 , u8
-      // MCS Index Reference:
-      // https://en.wikipedia.org/wiki/IEEE_802.11n-2009#Data_rates
-      data[0] = rtapIterator.this_arg[0]; // Known
-      data[1] = rtapIterator.this_arg[1]; // Flags
-      data[2] = rtapIterator.this_arg[2]; // MCS Index
-      printf("MCS:");
-      // 0:20, 1:40, 2:20L, 3:20U
-      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_BW)
-        printf("BW[%d]", (data[1] & IEEE80211_RADIOTAP_MCS_BW_MASK));
-      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_MCS)
-        printf("INDEX[%d]", data[2]);
-      // 0:LongGI, 1:ShortGI
-      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_GI)
-        printf("GI[%s]",
-               (data[1] & IEEE80211_RADIOTAP_MCS_SGI) ? "Short" : "Long");
-      // 0:Mixed, 1:Greenfield
-      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_FMT)
-        printf("HT[%s]",
-               (data[1] & IEEE80211_RADIOTAP_MCS_FMT_GF) ? "GF" : "Mix");
-      // 0:BCC, 1:LDPC
-      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_FEC)
-        printf("FEC[%s]",
-               (data[1] & IEEE80211_RADIOTAP_MCS_FEC_LDPC) ? "LDPC" : "BCC");
-      // STBC [0-3]
-      if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_STBC)
-        printf("STBC[%d]", (data[1] & IEEE80211_RADIOTAP_MCS_STBC_MASK));
-      if (data[0] & 0x40) // NESS:Number of extension spatial streams
-        printf("NESS[%d,%d]", (data[0] & 0x80), (data[1] & 0x80)); // MSB, LSB
-      printf(" ");
-      break;
+      case IEEE80211_RADIOTAP_MCS:  // 19, u8 , u8 , u8
+        // MCS Index Reference:
+        // https://en.wikipedia.org/wiki/IEEE_802.11n-2009#Data_rates
+        data[0] = rtapIterator->this_arg[0];  // Known
+        data[1] = rtapIterator->this_arg[1];  // Flags
+        data[2] = rtapIterator->this_arg[2];  // MCS Index
+        printf("MCS:");
+        // 0:20, 1:40, 2:20L, 3:20U
+        if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_BW)
+          printf("BW[%d]", (data[1] & IEEE80211_RADIOTAP_MCS_BW_MASK));
+        if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_MCS)
+          printf("INDEX[%d]", data[2]);
+        // 0:LongGI, 1:ShortGI
+        if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_GI)
+          printf("GI[%s]",
+                 (data[1] & IEEE80211_RADIOTAP_MCS_SGI) ? "Short" : "Long");
+        // 0:Mixed, 1:Greenfield
+        if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_FMT)
+          printf("HT[%s]",
+                 (data[1] & IEEE80211_RADIOTAP_MCS_FMT_GF) ? "GF" : "Mix");
+        // 0:BCC, 1:LDPC
+        if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_FEC)
+          printf("FEC[%s]",
+                 (data[1] & IEEE80211_RADIOTAP_MCS_FEC_LDPC) ? "LDPC" : "BCC");
+        // STBC [0-3]
+        if (data[0] & IEEE80211_RADIOTAP_MCS_HAVE_STBC)
+          printf("STBC[%d]", (data[1] & IEEE80211_RADIOTAP_MCS_STBC_MASK));
+        if (data[0] & 0x40)  // NESS:Number of extension spatial streams
+          printf("NESS[%d,%d]", (data[0] & 0x80),
+                 (data[1] & 0x80));  // MSB, LSB
+        printf(" ");
+        break;
 
-    case IEEE80211_RADIOTAP_AMPDU_STATUS: // 20, referencenumber:u32, flags:u16,
-                                          // crc:u8, reserved:u8
-      data[0] = get_unaligned_le32(&rtapIterator.this_arg[0]);
-      data[1] = get_unaligned_le16(&rtapIterator.this_arg[4]);
-      printf("AMPDU: %04X ", data[1]);
-      break;
+      case IEEE80211_RADIOTAP_AMPDU_STATUS:  // 20, referencenumber:u32,
+                                             // flags:u16, crc:u8, reserved:u8
+        data[0] = get_unaligned_le32(&rtapIterator->this_arg[0]);
+        data[1] = get_unaligned_le16(&rtapIterator->this_arg[4]);
+        printf("AMPDU: %04X ", data[1]);
+        break;
 
-    case IEEE80211_RADIOTAP_VHT: // 21, known:u16, flags:u8, bandwidth:u8,
-                                 // mcs_nss:u8, coding:u8, group_id:u8,
-                                 // partial_aid:u16
-      data[0] = get_unaligned_le16(&rtapIterator.this_arg[0]);
-      data[1] = rtapIterator.this_arg[2];
-      data[2] = rtapIterator.this_arg[3];
-      data[3] = rtapIterator.this_arg[4];
-      data[4] = rtapIterator.this_arg[5];
-      data[5] = rtapIterator.this_arg[6];
-      printf("VHT:");
-      // Space-time block coding: 0:No user has STBC, 1:All users have
-      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_STBC)
-        printf("STBC[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
-      // 0:STAs may doze during TXOP
-      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_TXOP_PS_NA)
-        printf("TXOP[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_TXOP_PS_NA));
-      // 0:LongGI, 1:ShortGI
-      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_GI)
-        printf("GI[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_SGI));
-      // Short GI NSYM disambiguation
-      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_SGI_NSYM_DIS)
-        printf("NSYM[%d]",
-               (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_SGI_NSYM_M10_9));
-      // LDPC Extra OFDM symbol
-      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_LDPC_EXTRA_OFDM_SYM)
-        printf("OFDM[%d]",
-               (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_LDPC_EXTRA_OFDM_SYM));
-      // Beamformed
-      if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_BEAMFORMED)
-        printf("BEAM[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_BEAMFORMED));
-      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_BANDWIDTH)
-      //   printf("BW[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
-      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_GROUP_ID)
-      //   printf("GROUPID[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
-      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_PARTIAL_AID)
-      //   printf("PAID[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
-      printf(" ");
-      break;
+      case IEEE80211_RADIOTAP_VHT:  // 21, known:u16, flags:u8, bandwidth:u8,
+                                    // mcs_nss:u8, coding:u8, group_id:u8,
+                                    // partial_aid:u16
+        data[0] = get_unaligned_le16(&rtapIterator->this_arg[0]);
+        data[1] = rtapIterator->this_arg[2];
+        data[2] = rtapIterator->this_arg[3];
+        data[3] = rtapIterator->this_arg[4];
+        data[4] = rtapIterator->this_arg[5];
+        data[5] = rtapIterator->this_arg[6];
+        printf("VHT:");
+        // Space-time block coding: 0:No user has STBC, 1:All users have
+        if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_STBC)
+          printf("STBC[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
+        // 0:STAs may doze during TXOP
+        if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_TXOP_PS_NA)
+          printf("TXOP[%d]",
+                 (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_TXOP_PS_NA));
+        // 0:LongGI, 1:ShortGI
+        if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_GI)
+          printf("GI[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_SGI));
+        // Short GI NSYM disambiguation
+        if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_SGI_NSYM_DIS)
+          printf("NSYM[%d]",
+                 (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_SGI_NSYM_M10_9));
+        // LDPC Extra OFDM symbol
+        if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_LDPC_EXTRA_OFDM_SYM)
+          printf("OFDM[%d]",
+                 (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_LDPC_EXTRA_OFDM_SYM));
+        // Beamformed
+        if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_BEAMFORMED)
+          printf("BEAM[%d]",
+                 (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_BEAMFORMED));
+        // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_BANDWIDTH)
+        //   printf("BW[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
+        // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_GROUP_ID)
+        //   printf("GROUPID[%d]", (data[1] &
+        //   IEEE80211_RADIOTAP_VHT_FLAG_STBC));
+        // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_PARTIAL_AID)
+        //   printf("PAID[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
+        printf(" ");
+        break;
 
-    case IEEE80211_RADIOTAP_TIMESTAMP: // 22,
-      printf("TIME: ");
-      break;
+      case IEEE80211_RADIOTAP_TIMESTAMP:  // 22,
+        printf("TIME: ");
+        break;
 
-    case IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE: // 29,
-      printf("NS: ");
-      break;
+      case IEEE80211_RADIOTAP_RADIOTAP_NAMESPACE:  // 29,
+        printf("NS: ");
+        break;
 
-    case IEEE80211_RADIOTAP_VENDOR_NAMESPACE: // 30,
-      printf("VNS: ");
-      break;
+      case IEEE80211_RADIOTAP_VENDOR_NAMESPACE:  // 30,
+        printf("VNS: ");
+        break;
 
-    case IEEE80211_RADIOTAP_EXT: // 31
-      printf("EXT: ");
-      break;
+      case IEEE80211_RADIOTAP_EXT:  // 31
+        printf("EXT: ");
+        break;
 
-    default:
-      break;
+      default:
+        break;
     }
   }
 
   printf("\033[0m\n");
-  return rtapIterator._max_length;
-
-  // if (retValue != -ENOENT)
-  //   return -1;
-  /* discard the radiotap header part */
-  // buf += rtapIterator._max_length;
-  // buflen -= rtapIterator._max_length;
+  if (retValue == EINVAL)
+    return -1;
+  else
+    return rtapIterator->_max_length;
 }
-
 
 /**
  * @brief Main function for the Wi-Fi Packet Injector program.
@@ -1045,7 +999,6 @@ int radioTapParser(const unsigned char *buf, int buflen) {
  * @return 0 on success, non-zero on failure.
  */
 int main(int argc, char *argv[]) {
-
   int opt;
   static struct option long_options[] = {{"fcs", no_argument, NULL, 'f'},
                                          {"blocking", no_argument, NULL, 'b'},
@@ -1061,35 +1014,35 @@ int main(int argc, char *argv[]) {
   while ((opt = getopt_long(argc, argv, "fbripsth", long_options, NULL)) !=
          -1) {
     switch (opt) {
-    case 'b':
-      flagNonBlocking = 0; // Disable non-blocking mode
-      break;
-    case 'f':
-      flagMarkWithFCS = 1; // Enable marking packets with FCS
-      break;
-    case 'r':
-      flagShowRadioTap = 1; // Enable display of Radiotap headers
-      break;
-    case 'i':
-      flagShowIEEE80211 = 1; // Enable display of IEEE 802.11 frames
-      break;
-    case 'p':
-      flagShowPacket = 1; // Enable display of packet data
-      break;
-    case 's':
-      flagShowStats = 1; // Enable display of statistics
-      break;
-    case 't':
-      flagEnableTransmit = 1; // Enable packet transmission
-      break;
-    case '?':
-      break;
-    case 'h':
-      usage(); // Display usage information
-      exit(EXIT_SUCCESS);
-    default:
-      usage(); // Display usage information and exit with failure
-      exit(EXIT_FAILURE);
+      case 'b':
+        flagNonBlocking = 0;  // Disable non-blocking mode
+        break;
+      case 'f':
+        flagMarkWithFCS = 1;  // Enable marking packets with FCS
+        break;
+      case 'r':
+        flagShowRadioTap = 1;  // Enable display of Radiotap headers
+        break;
+      case 'i':
+        flagShowIEEE80211 = 1;  // Enable display of IEEE 802.11 frames
+        break;
+      case 'p':
+        flagShowPacket = 1;  // Enable display of packet data
+        break;
+      case 's':
+        flagShowStats = 1;  // Enable display of statistics
+        break;
+      case 't':
+        flagEnableTransmit = 1;  // Enable packet transmission
+        break;
+      case '?':
+        break;
+      case 'h':
+        usage();  // Display usage information
+        exit(EXIT_SUCCESS);
+      default:
+        usage();  // Display usage information and exit with failure
+        exit(EXIT_FAILURE);
     }
   }
 
@@ -1136,7 +1089,6 @@ int main(int argc, char *argv[]) {
   rt.fields.rxFlags = 0x0000;
   rt.fields.antenna1 = 0;
   rt.fields.antenna2 = 1;
-  printRadiotapHeader(&rt);
 
   // Initialize IEEE 802.11 frame structure
   union IEEE80211Frame frame;
@@ -1150,9 +1102,9 @@ int main(int argc, char *argv[]) {
 
   // Set up the timer for the first time
   struct itimerval tout_val;
-  tout_val.it_interval.tv_sec = 1; // Interval in seconds
+  tout_val.it_interval.tv_sec = 1;  // Interval in seconds
   tout_val.it_interval.tv_usec = 0;
-  tout_val.it_value.tv_sec = 1; // Initial delay in seconds
+  tout_val.it_value.tv_sec = 1;  // Initial delay in seconds
   tout_val.it_value.tv_usec = 0;
 
   setitimer(ITIMER_REAL, &tout_val, 0);
@@ -1183,13 +1135,13 @@ int main(int argc, char *argv[]) {
     return 1;
   } else {
     switch (pcap_datalink(pcap)) {
-    case DLT_IEEE802_11_RADIO:
-      /* 802.11 plus radiotap radio header */
-      printf("Link-layer type: DLT_IEEE802_11_RADIO.\n");
-      break;
-    default:
-      printf("Unable to determine pcap link-layer type.\n");
-      return 2;
+      case DLT_IEEE802_11_RADIO:
+        /* 802.11 plus radiotap radio header */
+        printf("Link-layer type: DLT_IEEE802_11_RADIO.\n");
+        break;
+      default:
+        printf("Unable to determine pcap link-layer type.\n");
+        return 2;
     }
   }
 
@@ -1216,11 +1168,11 @@ int main(int argc, char *argv[]) {
   // Main packet capture and manipulation loop
   struct pcap_pkthdr *pktMetadata = NULL;
   char *packet = rxBuffer;
-  union RadiotapHeader *rt1;
   union IEEE80211Frame *frame1;
+  struct ieee80211_radiotap_iterator rtapIterator;
 
   char stopProgram = 0;
-  int rxbytes;
+  int rxbytes, rtapInitError;
 
   do {
     chars = getKeyboard(keyboardBuff);
@@ -1228,116 +1180,113 @@ int main(int argc, char *argv[]) {
     {
       // Standard character handling (toggle flags, adjust settings, etc.)
       switch (keyboardBuff[0]) {
-      case 'r':
-      case 'R':
-        flagShowRadioTap = (flagShowRadioTap) ? 0 : 1;
-        break;
-      case 'i':
-      case 'I':
-        flagShowIEEE80211 = (flagShowIEEE80211) ? 0 : 1;
-        break;
-      case 'p':
-      case 'P':
-        flagShowPacket = (flagShowPacket) ? 0 : 1;
-        break;
-      case 's':
-      case 'S':
-        flagShowStats = (flagShowStats) ? 0 : 1;
-        break;
-      case 't':
-      case 'T':
-        flagEnableTransmit = (flagEnableTransmit) ? 0 : 1;
-        break;
-      case 'j':
-      case 'J':
-        if (selectedMTUSize > (2 * PACKET_SIZE + 4)) {
-          --selectedMTUSize;
-          if (setMTU(argv[optind], selectedMTUSize) != 0)
-            printf("Error setting MTU %u bytes\n", selectedMTUSize);
-        }
-        break;
-      case 'k':
-      case 'K':
-        if (selectedMTUSize < MAX_MTU_SIZE) {
-          ++selectedMTUSize;
-          if (setMTU(argv[optind], selectedMTUSize) != 0)
-            printf("Error setting MTU %u bytes\n", selectedMTUSize);
-        }
-        break;
-      case 'n':
-      case 'N':
-        if (selectedRateIndex > 0) {
-          --selectedRateIndex;
-          rt.fields.dataRate = rates[selectedRateIndex];
-        }
-        break;
-      case 'm':
-      case 'M':
-        if (selectedRateIndex < MAX_RATES - 1) {
-          ++selectedRateIndex;
-          rt.fields.dataRate = rates[selectedRateIndex];
-        }
-        break;
-      case 'q':
-      case 'Q':
-        stopProgram = 1;
-        break;
-      default:
-        break;
+        case 'r':
+        case 'R':
+          flagShowRadioTap = (flagShowRadioTap) ? 0 : 1;
+          break;
+        case 'i':
+        case 'I':
+          flagShowIEEE80211 = (flagShowIEEE80211) ? 0 : 1;
+          break;
+        case 'p':
+        case 'P':
+          flagShowPacket = (flagShowPacket) ? 0 : 1;
+          break;
+        case 's':
+        case 'S':
+          flagShowStats = (flagShowStats) ? 0 : 1;
+          break;
+        case 't':
+        case 'T':
+          flagEnableTransmit = (flagEnableTransmit) ? 0 : 1;
+          break;
+        case 'j':
+        case 'J':
+          if (selectedMTUSize > (2 * PACKET_SIZE + 4)) {
+            --selectedMTUSize;
+            if (setMTU(argv[optind], selectedMTUSize) != 0)
+              printf("Error setting MTU %u bytes\n", selectedMTUSize);
+          }
+          break;
+        case 'k':
+        case 'K':
+          if (selectedMTUSize < MAX_MTU_SIZE) {
+            ++selectedMTUSize;
+            if (setMTU(argv[optind], selectedMTUSize) != 0)
+              printf("Error setting MTU %u bytes\n", selectedMTUSize);
+          }
+          break;
+        case 'n':
+        case 'N':
+          if (selectedRateIndex > 0) {
+            --selectedRateIndex;
+            rt.fields.dataRate = rates[selectedRateIndex];
+          }
+          break;
+        case 'm':
+        case 'M':
+          if (selectedRateIndex < MAX_RATES - 1) {
+            ++selectedRateIndex;
+            rt.fields.dataRate = rates[selectedRateIndex];
+          }
+          break;
+        case 'q':
+        case 'Q':
+          stopProgram = 1;
+          break;
+        default:
+          break;
       }
     } else if (chars == 3) /* Special character*/
     {
       // Special character handling (e.g., arrow keys)
       if (keyboardBuff[0] == 27 && keyboardBuff[1] == 91) {
         switch (keyboardBuff[2]) {
-        case 65: /* UP */
-          if (selectedTxPower < MAX_TX_POWER) {
-            ++selectedTxPower;
-            if (setTXPower(argv[optind], selectedTxPower) != 0)
-              printf("Error setting power %u dBm\n", selectedTxPower);
-          }
-          break;
-        case 66: /* DOWN */
-          if (selectedTxPower > 0) {
-            --selectedTxPower;
-            if (setTXPower(argv[optind], selectedTxPower) != 0)
-              printf("Error setting power %u dBm\n", selectedTxPower);
-          }
-          break;
-        case 67: /* RIGHT */
-          if (selectedChannel == 13)
-            selectedChannel = 36;
-          if (selectedChannel < MAX_CHANNEL) {
-            ++selectedChannel;
-            if (setFrequency(argv[optind], selectedChannel) != 0)
-              printf("Error setting channel %u [%d Mhz]\n", selectedChannel,
-                     wifiChannelToFrequency(selectedChannel));
-          }
-          break;
-        case 68: /* LEFT */
-          if (selectedChannel == 36)
-            selectedChannel = 13;
-          else if (selectedChannel > 1) {
-            --selectedChannel;
-            if (setFrequency(argv[optind], selectedChannel) != 0)
-              printf("Error setting channel %u [%d Mhz]\n", selectedChannel,
-                     wifiChannelToFrequency(selectedChannel));
-          }
-          break;
-        case 53: /* PAGE-UP */
-          if (delay < MAX_DELAY)
-            delay++;
-          printf("Delay[mSec]: %u\n", delay);
-          break;
-        case 54: /* PAGE-DOWN */
-          if (delay > 0)
-            delay--;
-          printf("Delay[mSec]: %u\n", delay);
-          break;
-        default:
-          printf("%d\t%d\t%d\n", (int)keyboardBuff[0], (int)keyboardBuff[1],
-                 (int)keyboardBuff[2]);
-          break;
+          case 65: /* UP */
+            if (selectedTxPower < MAX_TX_POWER) {
+              ++selectedTxPower;
+              if (setTXPower(argv[optind], selectedTxPower) != 0)
+                printf("Error setting power %u dBm\n", selectedTxPower);
+            }
+            break;
+          case 66: /* DOWN */
+            if (selectedTxPower > 0) {
+              --selectedTxPower;
+              if (setTXPower(argv[optind], selectedTxPower) != 0)
+                printf("Error setting power %u dBm\n", selectedTxPower);
+            }
+            break;
+          case 67: /* RIGHT */
+            if (selectedChannel == 13) selectedChannel = 36;
+            if (selectedChannel < MAX_CHANNEL) {
+              ++selectedChannel;
+              if (setFrequency(argv[optind], selectedChannel) != 0)
+                printf("Error setting channel %u [%d Mhz]\n", selectedChannel,
+                       wifiChannelToFrequency(selectedChannel));
+            }
+            break;
+          case 68: /* LEFT */
+            if (selectedChannel == 36)
+              selectedChannel = 13;
+            else if (selectedChannel > 1) {
+              --selectedChannel;
+              if (setFrequency(argv[optind], selectedChannel) != 0)
+                printf("Error setting channel %u [%d Mhz]\n", selectedChannel,
+                       wifiChannelToFrequency(selectedChannel));
+            }
+            break;
+          case 53: /* PAGE-UP */
+            if (delay < MAX_DELAY) delay++;
+            printf("Delay[mSec]: %u\n", delay);
+            break;
+          case 54: /* PAGE-DOWN */
+            if (delay > 0) delay--;
+            printf("Delay[mSec]: %u\n", delay);
+            break;
+          default:
+            printf("%d\t%d\t%d\n", (int)keyboardBuff[0], (int)keyboardBuff[1],
+                   (int)keyboardBuff[2]);
+            break;
         }
       }
     }
@@ -1348,47 +1297,50 @@ int main(int argc, char *argv[]) {
 
     if (capturedBytes > 0) {
       switch (readPacketStatus) {
-      case 0:
-        // packets are being read from a live capture and the packet buffer
-        // time-out expired, useful in non-blocking mode!!!
-        totalRXFPackets++;
-        totalRXFBytes += capturedBytes;
+        case 0:
+          // packets are being read from a live capture and the packet buffer
+          // time-out expired, useful in non-blocking mode!!!
+          totalRXFPackets++;
+          totalRXFBytes += capturedBytes;
 
-        if (pktMetadata->len != pktMetadata->caplen)
-          dumpPacketData(packet, capturedBytes);
+          if (pktMetadata->len != pktMetadata->caplen)
+            dumpPacketData(packet, capturedBytes);
 
-        break;
+          break;
 
-      case 1:
-        // the packet was read without problems
-        totalRXPackets++;
-        totalRXBytes += capturedBytes;
+        case 1:
+          // the packet was read without problems
+          totalRXPackets++;
+          totalRXBytes += capturedBytes;
 
-        if (capturedBytes >= PACKET_SIZE) {
+          rtapInitError = ieee80211_radiotap_iterator_init(
+              &rtapIterator, packet, capturedBytes, NULL);
 
-          rt1 = (union RadiotapHeader *)(packet);
-          frame1 = (union IEEE80211Frame *)(packet + RADIOTAPFRAME_SIZE);
+          if (!rtapInitError) {
+            if (flagShowRadioTap) {
+              radioTapParser(&rtapIterator);
+            }
 
-          if (flagShowRadioTap) {
-            // printRadiotapHeader(rt1);
-            radioTapParser(packet, capturedBytes);
+            if (capturedBytes > rtapIterator._max_length) {
+              if (flagShowIEEE80211) {
+                frame1 =
+                    (union IEEE80211Frame *)(packet + rtapIterator._max_length);
+                printIEEE80211Frame(frame1);
+              }
+
+              rxbytes = capturedBytes - rtapIterator._max_length -
+                        IEEE80211FRAME_SIZE;
+              if (flagShowPacket && (rxbytes > 0)) {
+                dumpPacketData(packet + PACKET_SIZE, rxbytes);
+              }
+            }
           }
-          if (flagShowIEEE80211) {
-            printIEEE80211Frame(frame1);
+          break;
+
+        default:
+          // Packet reading error
+          if (readPacketStatus < 0) {
           }
-
-          rxbytes = capturedBytes - PACKET_SIZE;
-          if (flagShowPacket) {
-            dumpPacketData(packet + PACKET_SIZE, rxbytes);
-          }
-        }
-
-        break;
-
-      default:
-        // Packet reading error
-        if (readPacketStatus < 0) {
-        }
       }
     }
 
@@ -1399,7 +1351,7 @@ int main(int argc, char *argv[]) {
     }
 
     pktMetadata->len = pktMetadata->caplen = 0;
-    usleep(delay * 1000); // Sleep for a specified delay
+    usleep(delay * 1000);  // Sleep for a specified delay
 
   } while (!stopProgram);
 
