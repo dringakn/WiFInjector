@@ -182,7 +182,16 @@ int ieee80211_radiotap_iterator_init(
   iterator->_bitmap_shifter = get_unaligned_le32(&radiotap_header->it_present);
   iterator->_arg = (uint8_t *)radiotap_header + sizeof(*radiotap_header);
   iterator->_reset_on_ext = 0;
-  iterator->_next_bitmap = &radiotap_header->it_present;
+
+  #if defined(__GNUC__) || defined(__clang__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
+  #endif
+    iterator->_next_bitmap = &radiotap_header->it_present;
+  #if defined(__GNUC__) || defined(__clang__)
+  #pragma GCC diagnostic pop
+  #endif
+  
   iterator->_next_bitmap++;
   iterator->_vns = vns;
   iterator->current_namespace = &radiotap_ns;

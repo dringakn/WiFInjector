@@ -1,41 +1,25 @@
 #!/bin/bash
+# monitor+freq setter
 
-# Check if an interface argument is provided, otherwise use "wlxXXXXXXXXXXXX" as default
-if [ -n "$1" ]; then
-	wlan="$1"
-else
-	wlan="wlx488f4cffe3f2"
-fi
+set -euo pipefail
+wlan="${1:-wlx00c0cab3e15f}"
+ch="${2:-1}"
+txp="${3:-20}"     # dBm
 
-# Check if an channel argument is provided, otherwise use "1" as default
-if [ -n "$2" ]; then
-	channel="$2"
-else
-	channel=1
-fi
+ch2mhz(){
+  [[ "$1" =~ ^[0-9]+$ && $1 -ge 2300 ]] && { echo "$1"; return; }
+  (( $1>=1 && $1<=14 )) && echo $((2407+5*$1)) || echo $((5000+5*$1))
+}
 
-# Check if an txpower argument is provided, otherwise use "20" as default
-if [ -n "$3" ]; then
-	txpower="$3"
-else
-	txpower=20
-fi
+mhz="$(ch2mhz "$ch")"
+mbm=$((txp*100))
 
-# Check if an data_rate argument is provided, otherwise use "2" as default
-if [ -n "$4" ]; then
-	data_rate="$4"
-else
-	data_rate=11
-fi
+ip link set "$wlan" down
+iw dev "$wlan" set monitor otherbss fcsfail
+ip link set "$wlan" up
+iw dev "$wlan" set freq "$mhz" || iw dev "$wlan" set channel "$ch"
+iw dev "$wlan" set txpower fixed "$mbm" || true
 
-# Disable the interface and set it to monitor mode
-ifconfig "${wlan}" down
-iw dev "${wlan}" set monitor otherbss fcsfail # Set the interface to monitor mode with specific options
-ifconfig "${wlan}" up
-iw dev "${wlan}" set channel "${channel}"
-iwconfig "${wlan}" rate "${data_rate}M"
-iwconfig "${wlan}" txpower "${txpower}"
-
-# Display a message indicating that the operation is being performed on the chosen interface
-echo "Running wifinjector on ${wlan} at channel ${channel} txpower ${txpower} dBm rate ${data_rate}M"
-./wifinjector "${wlan}"
+echo "wifinjector: iface=$wlan ch=$ch (${mhz} MHz) txp=${txp}dBm"
+iw dev "$wlan" info | egrep -i 'type|channel|txpower' || true
+./wifinjector "$wlan"

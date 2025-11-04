@@ -4,7 +4,7 @@ import pyshark
 import subprocess
 
 # Define the interface in monitor mode
-interface = "wlx00e04ce72fdc"  # "wlx488f4cffd51b", "wlx00e04c41219c", "wlx00e04c8d6fb3"
+interface = "wlx00c0cab3e15f"  # "wlx488f4cffd51b", "wlx00e04c41219c", "wlx00e04c8d6fb3"
 
 # Set the interface to monitor mode using subprocess
 try:

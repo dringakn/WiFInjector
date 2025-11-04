@@ -8,6 +8,7 @@
 #include <sys/ioctl.h> // Header for ioctl system call, used for low-level device control
 #include <termios.h> // Header for terminal I/O handling, used for keyboard input handling
 #include <unistd.h> // Header for POSIX system calls, like close() and usleep()
+#include <stdbool.h> // Header for boolean data type
 
 #define MAX_BUFF_SIZE 4096     // Maximum buffer size for packet data
 #define MAX_MTU_SIZE 1500      // Maximum MTU (Maximum Transmit Unit) size
@@ -178,7 +179,59 @@ unsigned char destMACAddress[MAX_MAC_BUFF_SIZE] = {0xFF};   // Destination MAC
 char rxBuffer[MAX_BUFF_SIZE] = {' '};
 char txBuffer[MAX_BUFF_SIZE] = {' '};
 
+// NOTE: legacy rates in Mb/s
 const int rates[MAX_RATES] = {1, 2, 5, 6, 9, 11, 12, 18, 24, 36, 48, 54};
+
+// channel stepping table + helpers (wrap-around)
+static const int allowed_channels[] = {
+  /* 2.4 GHz */ 
+  1,2,3,4,5,6,7,8,9,10,11,12,13,
+  /* 5 GHz 20MHz */ 
+  36,40,44,48, 52,56,60,64,
+  100,104,108,112,116,120,124,128,132,136,140,144,
+  149,153,157,161,165
+};
+static const int allowed_channels_count =
+  (int)(sizeof(allowed_channels)/sizeof(allowed_channels[0]));
+
+static int find_chan_idx(int ch) {
+  for (int i=0;i<allowed_channels_count;i++)
+    if (allowed_channels[i]==(int)ch) return i;
+  return -1;
+}
+static int next_chan(int ch) {
+  int i = find_chan_idx(ch);
+  if (i<0) return 1; // fallback
+  return allowed_channels[(i+1)%allowed_channels_count];
+}
+static int prev_chan(int ch) {
+  int i = find_chan_idx(ch);
+  if (i<0) return 1; // fallback
+  return allowed_channels[(i-1+allowed_channels_count)%allowed_channels_count];
+}
+// ---------------------------------------------------------------------
+
+static inline int ch_to_mhz(int ch) {
+  if (ch >= 2300) return ch;                 // already MHz
+  if (ch >= 1 && ch <= 14)  return 2407 + 5*ch;   // 2.4 GHz
+  if (ch >= 36 && ch <= 165) return 5000 + 5*ch;  // 5 GHz
+  return 2412;
+}
+static inline int mhz_to_channel(int mhz) {
+  if (mhz >= 4900) return (mhz - 5000)/5; // e.g., 5180 -> 36
+  if (mhz >= 2400 && mhz <= 2484) return (mhz - 2407)/5; // 2412 -> 1
+  return 1;
+}
+static inline unsigned short rt_chflags_for(int mhz, int rate_mbps) {
+  if (mhz >= 4900) return 0x0140; // 5 GHz + OFDM
+  if (rate_mbps==1 || rate_mbps==2 || rate_mbps==5 || rate_mbps==11) return 0x00A0; // 2G+CCK
+  return 0x00C0; // 2G+OFDM
+}
+static inline int sanitize_rate_for_band(int mhz, int req_rate_mbps) {
+  if (mhz >= 4900) return 6; // legacy baseline on 5 GHz
+  return req_rate_mbps;
+}
+int selectedFreqMHz = 2412; // tracks active MHz
 
 /**
  * @brief Convert a Wi-Fi channel number to its corresponding frequency.
@@ -195,21 +248,7 @@ const int rates[MAX_RATES] = {1, 2, 5, 6, 9, 11, 12, 18, 24, 36, 48, 54};
  * - Invalid channels or bands will return a default frequency of 2.4 GHz.
  */
 int wifiChannelToFrequency(int channel) {
-  // Check if the channel is within the 2.4 GHz band range (Channels 1 to 13)
-  if (channel >= 1 && channel <= 13) {
-    // Calculate the frequency for the 2.4 GHz band using the channel number
-    return 2412 + (channel - 1) * 5;
-  }
-  // Check if the channel is within the 5 GHz band range (Channels 36 to 165)
-  else if (channel >= 36 && channel <= 165) {
-    // Calculate the frequency for the 5 GHz band using the channel number
-    return 5180 + (channel - 36) * 5;
-  }
-  // Default case: Invalid channel or band, return a default frequency of 2.4
-  // GHz
-  else {
-    return 2412;
-  }
+  return ch_to_mhz(channel);
 }
 
 /**
@@ -291,7 +330,7 @@ void sigalrm_handler(int sig) {
   White	  \033[37m	              \033[47m
   Reset	  \033[0m	                \033[0m
   */
-
+  (void)sig; // silence -Wunused-parameter warning
   if (flagShowStats) {
     // Calculate success rate (percentage of received packets)
     int successRate = (totalTXBytes) ? totalRXPackets * 100 / totalTXPacket : 0;
@@ -337,32 +376,69 @@ void sigalrm_handler(int sig) {
  * This function prints a usage message to the standard output, explaining
  * how to use the wifinjector program and its command-line options.
  */
-void usage(void) {
-  printf("Usage: wifinjector [options] <interface>\n\n"
-         "Options:\n"
-         "  -f, --fcs           Mark as having FCS (CRC) already\n"
-         "  -b, --blocking      Set blocking mode, default otherwise "
-         "non-blocking\n"
-         "  -r, --radiotap      Show Radiotap header\n"
-         "  -i, --ieee80211     Show IEEE802.11 frame\n"
-         "  -p, --packet        Show packet data\n"
-         "  -s, --stats         Show statistics\n"
-         "  -t, --transmit      Enable packet transmission\n"
-         "  -h, --help          Display this help message\n\n"
-         "Keyboard Shortcuts:\n"
-         "  - Press 'r' or 'R' to toggle Radiotap header display\n"
-         "  - Press 'i' or 'I' to toggle IEEE802.11 frame display\n"
-         "  - Press 'p' or 'P' to toggle packet data display\n"
-         "  - Press 's' or 'S' to toggle statistics display\n"
-         "  - Press 't' or 'T' to toggle packet transmission\n"
-         "  - Press 'j' or 'J' to decrease MTU size\n"
-         "  - Press 'k' or 'K' to increase MTU size\n"
-         "  - Press 'n' or 'N' to decrease data rate\n"
-         "  - Press 'm' or 'M' to increase data rate\n"
-         "  - Press 'q' or 'Q' to quit the program\n\n");
-  // Exit the program with a non-zero status code to indicate an error.
-  exit(1);
+void usage(bool exitProgram) {
+  printf(
+    "Usage: wifinjector [options] <interface>\n"
+    "\n"
+    "Required:\n"
+    "  <interface>        Wireless interface name in monitor-capable driver (e.g. wlan0)\n"
+    "\n"
+    "Options:\n"
+    "  -f, --fcs          Mark injected frames as already having FCS/CRC\n"
+    "  -b, --blocking     Use blocking capture (default: non-blocking)\n"
+    "  -r, --radiotap     Print Radiotap header for each received frame (toggle at runtime: 'r')\n"
+    "  -i, --ieee80211    Print IEEE 802.11 header for each received frame (toggle at runtime: 'i')\n"
+    "  -p, --packet       Dump payload bytes for each received frame (toggle at runtime: 'p')\n"
+    "  -s, --stats        Show periodic stats line (default: on; toggle at runtime: 's')\n"
+    "  -t, --transmit     Start with packet transmission enabled (toggle at runtime: 't')\n"
+    "  -h, --help         Show this help and exit\n"
+    "\n"
+    "Defaults:\n"
+    "  Non-blocking capture, stats shown, transmit disabled,\n"
+    "  TX power = %u dBm, Channel = %u, MTU = %u, Rate index = %u (legacy %d Mb/s)\n"
+    "\n"
+    "Keyboard shortcuts (live controls):\n"
+    "  Visibility:\n"
+    "    r / R   Toggle Radiotap header display\n"
+    "    i / I   Toggle IEEE 802.11 header display\n"
+    "    p / P   Toggle packet payload dump\n"
+    "    s / S   Toggle periodic statistics line\n"
+    "\n"
+    "  Transmit:\n"
+    "    t / T   Enable/disable packet injection\n"
+    "\n"
+    "  NIC settings:\n"
+    "    ↑       Increase TX power (bounded 0..%u dBm)\n"
+    "    ↓       Decrease TX power\n"
+    "    →       Next channel (wraps through allowed channel list)\n"
+    "    ←       Previous channel (wraps through allowed channel list)\n"
+    "    PgUp    Increase delay between loop iterations (ms)\n"
+    "    PgDn    Decrease delay between loop iterations (ms)\n"
+    "    j / J   Decrease MTU by 1 byte (min = 2*header + 4)\n"
+    "    k / K   Increase MTU by 1 byte (max = %u)\n"
+    "    n / N   Lower data rate index (band-safe sanitize applied)\n"
+    "    m / M   Raise  data rate index\n"
+    "\n"
+    "  Program:\n"
+    "    h / H   Show this help\n"
+    "    q / Q   Quit\n"
+    "\n"
+    "Stats line legend (printed every second when enabled):\n"
+    "  [host] RxPacketRate:[ok][fail] RXBPS:[ok][fail] TxPacketRate:[ok][fail] TXBPS:[ok][fail]\n"
+    "         TX[1=on] NB[1=non-block] D[delay_ms] PWR[dBm] CH[ch] MTU[bytes] RATE[Mb/s] SUCCESS[%%]\n"
+    "\n"
+    "Examples:\n"
+    "  sudo wifinjector -s -r -i wlan0mon\n"
+    "  sudo wifinjector --transmit --packet wlan0mon\n"
+    "\n",
+        MAX_TX_POWER, selectedChannel, (unsigned)selectedMTUSize,
+        selectedRateIndex, rates[selectedRateIndex],
+        MAX_TX_POWER, MAX_MTU_SIZE
+  );
+
+  if (exitProgram) exit(0);
 }
+
 
 /**
  * @brief Prints information from a Radiotap header structure.
@@ -386,7 +462,7 @@ void printRadiotapHeader(const union RadiotapHeader *header) {
          header->fields.pFlags[1].data, // Flags part 2
          header->fields.pFlags[2].data, // Flags part 3
          header->fields.flags.data,     // General flags
-         header->fields.dataRate,       // Data rate
+         header->fields.dataRate,       // Data rate (0.5 Mb/s units)
          header->fields.chFrequency,    // Channel frequency
          header->fields.chFlags.data,   // Channel flags
          header->fields.RSSI, // Received Signal Strength Indicator (RSSI)
@@ -698,7 +774,7 @@ int setMonitorMode(const char *ifaceName) {
  * mode is in monitor mode or if the interface is in use for a connection.
  *
  * @param[in] ifaceName The name of the wireless network interface.
- * @param[in] channel The channel number to set.
+ * @param[in] channel The channel number to set (or MHz if >= 2300).
  * @return 0 on success, -1 on failure.
  */
 int setFrequency(const char *ifaceName, unsigned char channel) {
@@ -711,25 +787,28 @@ int setFrequency(const char *ifaceName, unsigned char channel) {
   // Copy the interface name (ifaceName) into the wrq structure.
   strncpy(wrq.ifr_name, ifaceName, IFNAMSIZ);
 
-  // Check if the current mode is in monitor mode or if the interface is in use.
+  // Read current
   if (sendIOCTLCommand(SIOCGIWFREQ, &wrq) == 0) {
-    // Print the current channel frequency.
     printf("Channel Frequency: %d\n", wrq.u.freq.m);
+  }
 
-    // Convert the channel number to a frequency and set it in the wrq
-    // structure.
-    wrq.u.freq.m = wifiChannelToFrequency(channel);
+  // Desired MHz from channel/MHz
+  int desired_mhz = wifiChannelToFrequency(channel);
 
-    // Set the new frequency using an IOCTL command.
-    if (sendIOCTLCommand(SIOCSIWFREQ, &wrq) == 0) {
-      // Frequency setting was successful, do nothing.
-    } else {
-      // Failed to set the new frequency, set the result to indicate failure.
-      result = -1;
+  // Set m,e correctly (freq = m * 10^e Hz)
+  wrq.u.freq.m = desired_mhz;
+  wrq.u.freq.e = 6;           // MHz
+  wrq.u.freq.i = 0;
+  wrq.u.freq.flags = 0;
+
+  // Apply
+  if (sendIOCTLCommand(SIOCSIWFREQ, &wrq) == 0) {
+    // Re-read back what kernel accepted and sync globals
+    if (sendIOCTLCommand(SIOCGIWFREQ, &wrq) == 0) {
+      selectedFreqMHz = (wrq.u.freq.e >= 6) ? (wrq.u.freq.m) : (wrq.u.freq.m); // simplified
+      selectedChannel = mhz_to_channel(selectedFreqMHz);
     }
   } else {
-    // Failed to retrieve the current frequency or mode, set the result to
-    // indicate failure.
     result = -1;
   }
 
@@ -787,8 +866,13 @@ int radioTapParser(const unsigned char *buf, int buflen) {
 
   int data[32] = {0};
   struct ieee80211_radiotap_iterator rtapIterator;
+
+  // iterator expects struct ieee80211_radiotap_header*
+  struct ieee80211_radiotap_header *rt_hdr =
+      (struct ieee80211_radiotap_header *)(void *)buf;
+
   int retValue =
-      ieee80211_radiotap_iterator_init(&rtapIterator, buf, buflen, NULL);
+      ieee80211_radiotap_iterator_init(&rtapIterator, rt_hdr, buflen, NULL);
 
   printf("\033[1;32mRadioTap:%02d ", rtapIterator._max_length);
   while (!retValue) {
@@ -993,12 +1077,6 @@ int radioTapParser(const unsigned char *buf, int buflen) {
       // Beamformed
       if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_BEAMFORMED)
         printf("BEAM[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_BEAMFORMED));
-      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_BANDWIDTH)
-      //   printf("BW[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
-      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_GROUP_ID)
-      //   printf("GROUPID[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
-      // if (data[0] & IEEE80211_RADIOTAP_VHT_KNOWN_PARTIAL_AID)
-      //   printf("PAID[%d]", (data[1] & IEEE80211_RADIOTAP_VHT_FLAG_STBC));
       printf(" ");
       break;
 
@@ -1032,6 +1110,7 @@ int radioTapParser(const unsigned char *buf, int buflen) {
   // buf += rtapIterator._max_length;
   // buflen -= rtapIterator._max_length;
 }
+
 
 
 /**
@@ -1085,12 +1164,18 @@ int main(int argc, char *argv[]) {
     case '?':
       break;
     case 'h':
-      usage(); // Display usage information
-      exit(EXIT_SUCCESS);
+      usage(true); // Display usage information
+      break;
     default:
-      usage(); // Display usage information and exit with failure
-      exit(EXIT_FAILURE);
+      usage(true); // Display usage information and exit with failure
+      break;
     }
+  }
+
+  // Ensure an <interface> argument was provided
+  if (optind >= argc || argv[optind] == NULL || argv[optind][0] == '\0') {
+    fprintf(stderr, "Error: missing <interface>.\n\n");
+    usage(true); // exits
   }
 
   // Get hostname and configure network interface
@@ -1109,7 +1194,16 @@ int main(int argc, char *argv[]) {
     printf("Unable to set Monitor mode.\n");
   }
 
-  // Initialize Channel number
+  // Adopt current NIC frequency BEFORE we touch channel (so we don't retune to 2412)
+  {
+    IWReq wrq; memset(&wrq, 0, sizeof(wrq)); strncpy(wrq.ifr_name, argv[optind], IFNAMSIZ);
+    if (sendIOCTLCommand(SIOCGIWFREQ, &wrq) == 0) {
+      selectedFreqMHz = wrq.u.freq.m;               // kernel reports in m*10^e; we assume MHz in m,e==6 on modern drivers
+      selectedChannel = mhz_to_channel(selectedFreqMHz);
+    }
+  }
+
+  // Keep the existing behavior (no-op if same): set to selectedChannel (now derived)
   if (setFrequency(argv[optind], selectedChannel) != 0) {
     printf("Unable to set Frequency.\n");
   }
@@ -1121,6 +1215,7 @@ int main(int argc, char *argv[]) {
 
   // Initialize Radiotap header structure
   union RadiotapHeader rt;
+  memset(&rt, 0, sizeof(rt));
   rt.fields.revision = PKTHDR_RADIOTAP_VERSION;
   rt.fields.padding = 0;
   rt.fields.length = RADIOTAPFRAME_SIZE;
@@ -1128,9 +1223,13 @@ int main(int argc, char *argv[]) {
   rt.fields.pFlags[1].data = 0xA0000820;
   rt.fields.pFlags[2].data = 0x00000820;
   rt.fields.flags.data = 0x10;
-  rt.fields.dataRate = rates[selectedRateIndex];
-  rt.fields.chFrequency = wifiChannelToFrequency(selectedChannel);
-  rt.fields.chFlags.data = 0x00A0;
+  // Keep radiotap fields coherent with band/rate (RATE in 0.5 Mb/s units)
+  {
+    int rate_mbps = sanitize_rate_for_band(selectedFreqMHz, rates[selectedRateIndex]);
+    rt.fields.dataRate     = (unsigned char)(rate_mbps * 2);
+    rt.fields.chFrequency  = (unsigned short)selectedFreqMHz;
+    rt.fields.chFlags.data = rt_chflags_for(selectedFreqMHz, rate_mbps);
+  }
   rt.fields.RSSI = rt.fields.RSSI1 = rt.fields.RSSI2 = -16;
   rt.fields.signalQuality = 100;
   rt.fields.rxFlags = 0x0000;
@@ -1216,7 +1315,7 @@ int main(int argc, char *argv[]) {
   // Main packet capture and manipulation loop
   struct pcap_pkthdr *pktMetadata = NULL;
   char *packet = rxBuffer;
-  union RadiotapHeader *rt1;
+  // union RadiotapHeader *rt1;
   union IEEE80211Frame *frame1;
 
   char stopProgram = 0;
@@ -1268,19 +1367,29 @@ int main(int argc, char *argv[]) {
       case 'N':
         if (selectedRateIndex > 0) {
           --selectedRateIndex;
-          rt.fields.dataRate = rates[selectedRateIndex];
+          { int rbps = sanitize_rate_for_band(selectedFreqMHz, rates[selectedRateIndex]);
+            rt.fields.dataRate = (unsigned char)(rbps * 2);
+            rt.fields.chFlags.data = rt_chflags_for(selectedFreqMHz, rbps);
+          }
         }
         break;
       case 'm':
       case 'M':
         if (selectedRateIndex < MAX_RATES - 1) {
           ++selectedRateIndex;
-          rt.fields.dataRate = rates[selectedRateIndex];
+          { int rbps = sanitize_rate_for_band(selectedFreqMHz, rates[selectedRateIndex]);
+            rt.fields.dataRate = (unsigned char)(rbps * 2);
+            rt.fields.chFlags.data = rt_chflags_for(selectedFreqMHz, rbps);
+          }
         }
         break;
       case 'q':
       case 'Q':
         stopProgram = 1;
+        break;
+      case 'h':
+      case 'H':
+        usage(false);
         break;
       default:
         break;
@@ -1305,23 +1414,35 @@ int main(int argc, char *argv[]) {
           }
           break;
         case 67: /* RIGHT */
-          if (selectedChannel == 13)
-            selectedChannel = 36;
-          if (selectedChannel < MAX_CHANNEL) {
-            ++selectedChannel;
-            if (setFrequency(argv[optind], selectedChannel) != 0)
-              printf("Error setting channel %u [%d Mhz]\n", selectedChannel,
-                     wifiChannelToFrequency(selectedChannel));
+          {
+            int ch = next_chan((int)selectedChannel);
+            if (setFrequency(argv[optind], (unsigned char)ch) != 0)
+              printf("Error setting channel %u [%d Mhz]\n", ch,
+                     wifiChannelToFrequency(ch));
+            else {
+              selectedChannel = ch;
+              selectedFreqMHz = wifiChannelToFrequency(selectedChannel);
+              int rbps = sanitize_rate_for_band(selectedFreqMHz, rates[selectedRateIndex]);
+              rt.fields.chFrequency  = (unsigned short)selectedFreqMHz;
+              rt.fields.chFlags.data = rt_chflags_for(selectedFreqMHz, rbps);
+              rt.fields.dataRate     = (unsigned char)(rbps * 2);
+            }
           }
           break;
         case 68: /* LEFT */
-          if (selectedChannel == 36)
-            selectedChannel = 13;
-          else if (selectedChannel > 1) {
-            --selectedChannel;
-            if (setFrequency(argv[optind], selectedChannel) != 0)
-              printf("Error setting channel %u [%d Mhz]\n", selectedChannel,
-                     wifiChannelToFrequency(selectedChannel));
+          {
+            int ch = prev_chan((int)selectedChannel);
+            if (setFrequency(argv[optind], (unsigned char)ch) != 0)
+              printf("Error setting channel %u [%d Mhz]\n", ch,
+                     wifiChannelToFrequency(ch));
+            else {
+              selectedChannel = ch;
+              selectedFreqMHz = wifiChannelToFrequency(selectedChannel);
+              int rbps = sanitize_rate_for_band(selectedFreqMHz, rates[selectedRateIndex]);
+              rt.fields.chFrequency  = (unsigned short)selectedFreqMHz;
+              rt.fields.chFlags.data = rt_chflags_for(selectedFreqMHz, rbps);
+              rt.fields.dataRate     = (unsigned char)(rbps * 2);
+            }
           }
           break;
         case 53: /* PAGE-UP */
@@ -1344,7 +1465,7 @@ int main(int argc, char *argv[]) {
 
     int readPacketStatus =
         pcap_next_ex(pcap, &pktMetadata, (const unsigned char **)&packet);
-    int capturedBytes = pktMetadata->caplen;
+    int capturedBytes = pktMetadata ? pktMetadata->caplen : 0;
 
     if (capturedBytes > 0) {
       switch (readPacketStatus) {
@@ -1366,12 +1487,12 @@ int main(int argc, char *argv[]) {
 
         if (capturedBytes >= PACKET_SIZE) {
 
-          rt1 = (union RadiotapHeader *)(packet);
+          // rt1 = (union RadiotapHeader *)(packet);
           frame1 = (union IEEE80211Frame *)(packet + RADIOTAPFRAME_SIZE);
 
           if (flagShowRadioTap) {
             // printRadiotapHeader(rt1);
-            radioTapParser(packet, capturedBytes);
+            radioTapParser((const unsigned char*)packet, capturedBytes);
           }
           if (flagShowIEEE80211) {
             printIEEE80211Frame(frame1);
@@ -1398,7 +1519,7 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    pktMetadata->len = pktMetadata->caplen = 0;
+    if (pktMetadata) { pktMetadata->len = pktMetadata->caplen = 0; }
     usleep(delay * 1000); // Sleep for a specified delay
 
   } while (!stopProgram);
